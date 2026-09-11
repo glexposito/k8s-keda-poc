@@ -1,27 +1,14 @@
 # k8s-keda-poc
 
-A tiny, throwaway PoC for showing people how we plan to lay out namespaces,
-labels, and per-namespace guardrails in Kubernetes — before we wire up the
-real GitOps flow. Anyone can clone this and spin up three local k3s clusters
-to poke around.
+A tiny, throwaway PoC showing how to autoscale workers with KEDA, deployed
+via GitOps from a single Argo CD instance managing three k3s clusters
+(internal/stg/prod) — along with the namespace layout, labels, and
+per-namespace guardrails each cluster gets along the way. Anyone can clone
+this and spin up all three locally to poke around.
 
 ## Design philosophy
 
-KISS — keep it simple, stupid. Every design decision in this repo picks the
-boring, obvious option over the clever one, even when the clever option is
-more "correct." A few examples baked into the repo, not just claimed:
-
-- Fixed IP addresses in `docker-compose.yaml` instead of a script that runs
-  `docker inspect` to discover them at runtime.
-- Kubernetes' own `NodePort` service for the Argo CD UI instead of a script
-  wrapping `kubectl port-forward` in a background process.
-- Compose healthchecks (`condition: service_healthy`) instead of a
-  hand-rolled polling loop waiting for clusters to come up.
-- A hardcoded demo password instead of a secrets-management story this PoC
-  doesn't need.
-
-If a change here needs more moving parts than the problem actually has,
-that's a sign to simplify the approach, not to add another script.
+KISS — keep it simple, stupid!
 
 ## What this shows
 
@@ -52,17 +39,12 @@ from `core-workers` on `prod` —
 namespace names aren't global, so reusing the same one across clusters is
 fine and avoids a redundant suffix.
 
-| Namespace      | Cluster  | Purpose                                              |
-| -------------- | -------- | ----------------------------------------------------- |
-| `core-workers` | internal | Safe to break, catches issues before anything customer-facing |
-| `core-workers` | stg      | Customer-facing canary gate for `core-workers` on prod |
-| `core-workers` | prod     | Customer-facing, full production traffic               |
+| Namespace      | Cluster  | Purpose                                                              |
+| -------------- | -------- | -------------------------------------------------------------------- |
+| `core-workers` | internal | Safe to break, catches issues before anything customer-facing        |
+| `core-workers` | stg      | Customer-facing canary gate for `core-workers` on prod               |
+| `core-workers` | prod     | Customer-facing, full production traffic                             |
 | `argocd`       | prod     | Fixed platform namespace — Argo CD lives here, not a workload tenant |
-
-Every workload namespace carries `environment`, `stage`, `cost-center`, and
-`managed-by` labels — `environment` and `stage` are the same value today
-since each cluster maps 1:1 to one stage, kept as separate labels anyway
-in case that changes again later:
 
 ```bash
 docker exec k3s-internal kubectl get ns -l environment=internal
