@@ -1,10 +1,9 @@
 # Static CoreDNS override so pods can resolve "azurite" by name - Docker's
 # own embedded DNS (which resolves "azurite" from a container's own shell)
 # doesn't reach inside a pod's separate network namespace, so CoreDNS needs
-# its own mapping. This can be plain, git-committed YAML here (unlike the
-# cross-cluster k3s hostnames scripts/bootstrap-argocd.sh has to bridge at
-# runtime) because azurite has a fixed IP in docker-compose.yaml
-# (172.28.0.100), not a Docker-assigned one - there's nothing to discover.
+# its own mapping. This can be plain, git-committed YAML because azurite
+# has a fixed IP in docker-compose.yaml (172.28.0.100), not a
+# Docker-assigned one - there's nothing to discover.
 apiVersion: v1
 kind: ConfigMap
 metadata:

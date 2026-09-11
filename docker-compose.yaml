@@ -16,10 +16,23 @@ services:
 
     volumes:
       - internal-data:/var/lib/rancher/k3s
+      - internal-kubeconfig:/etc/rancher/k3s
       - ./manifests/internal:/var/lib/rancher/k3s/server/manifests/custom:ro
 
     networks:
-      - k8s-management
+      k8s-management:
+        # Fixed, not Docker-assigned - lets manifests/prod/05-cluster-dns.yaml
+        # be static, git-committed YAML instead of something
+        # argocd-bootstrap has to discover at runtime, same reasoning as
+        # azurite's fixed IP below.
+        ipv4_address: 172.28.0.101
+
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl wait --for=create node --all --timeout=3s && kubectl wait --for=condition=ready node --all --timeout=3s"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
 
   stg:
     image: docker.io/rancher/k3s:v1.36.2-k3s1
@@ -38,10 +51,19 @@ services:
 
     volumes:
       - stg-data:/var/lib/rancher/k3s
+      - stg-kubeconfig:/etc/rancher/k3s
       - ./manifests/stg:/var/lib/rancher/k3s/server/manifests/custom:ro
 
     networks:
-      - k8s-management
+      k8s-management:
+        ipv4_address: 172.28.0.102
+
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl wait --for=create node --all --timeout=3s && kubectl wait --for=condition=ready node --all --timeout=3s"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
 
   prod:
     image: docker.io/rancher/k3s:v1.36.2-k3s1
@@ -61,11 +83,19 @@ services:
 
     volumes:
       - prod-data:/var/lib/rancher/k3s
+      - prod-kubeconfig:/etc/rancher/k3s
       - ./manifests/prod:/var/lib/rancher/k3s/server/manifests/custom:ro
       - ./argocd/helmchart.yaml:/var/lib/rancher/k3s/server/manifests/argocd-helmchart.yaml:ro
 
     networks:
       - k8s-management
+
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl wait --for=create node --all --timeout=3s && kubectl wait --for=condition=ready node --all --timeout=3s"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
 
   # Local Azure Storage Queue emulator - there's no real Azure account
   # here, Azurite is Microsoft's official emulator and speaks the same
@@ -95,6 +125,76 @@ services:
         # be a static, git-committed value instead of something a
         # bootstrap script has to discover at runtime via `docker inspect`.
         ipv4_address: 172.28.0.100
+
+  # One-shot: registers internal/stg with Argo CD (running on prod) and
+  # applies the root Application, once all three clusters are up and Argo
+  # CD has installed. Reuses the k3s image purely for its bundled kubectl -
+  # no server process runs here. Talks to each cluster over
+  # k8s-management by hostname instead of `docker exec`, using the
+  # kubeconfig each k3s server writes to /etc/rancher/k3s/k3s.yaml (shared
+  # via the *-kubeconfig volumes above); --server overrides the
+  # 127.0.0.1 baked into that file, and TLS still verifies cleanly
+  # against it since --tls-san=k3s-<cluster> above covers exactly that
+  # hostname.
+  argocd-bootstrap:
+    image: docker.io/rancher/k3s:v1.36.2-k3s1
+    container_name: argocd-bootstrap
+    depends_on:
+      internal:
+        condition: service_healthy
+      stg:
+        condition: service_healthy
+      prod:
+        condition: service_healthy
+
+    volumes:
+      - internal-kubeconfig:/kubeconfigs/internal:ro
+      - stg-kubeconfig:/kubeconfigs/stg:ro
+      - prod-kubeconfig:/kubeconfigs/prod:ro
+      - ./argocd/root-app.yaml:/argocd/root-app.yaml:ro
+
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        prod() { kubectl --kubeconfig=/kubeconfigs/prod/k3s.yaml --server=https://k3s-prod:6443 "$$@"; }
+
+        echo "Waiting for Argo CD..."
+        for workload in deployment/argocd-server deployment/argocd-repo-server \
+          deployment/argocd-applicationset-controller statefulset/argocd-application-controller; do
+          prod -n argocd wait --for=create "$$workload" --timeout=600s
+          prod -n argocd rollout status "$$workload" --timeout=300s
+        done
+
+        echo "Registering internal and stg as managed clusters..."
+        for cluster in internal stg; do
+          remote() { kubectl --kubeconfig=/kubeconfigs/$$cluster/k3s.yaml --server=https://k3s-$$cluster:6443 "$$@"; }
+          remote -n kube-system wait --for=create secret/argocd-manager-token --timeout=120s
+          remote -n kube-system wait --for=jsonpath='{.data.token}' secret/argocd-manager-token --timeout=120s
+          token=$$(remote -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
+          prod apply -n argocd -f - <<EOF
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: $${cluster}-cluster
+          namespace: argocd
+          labels:
+            argocd.argoproj.io/secret-type: cluster
+        type: Opaque
+        stringData:
+          name: $${cluster}
+          server: https://k3s-$${cluster}:6443
+          config: |
+            {"bearerToken":"$${token}","tlsClientConfig":{"insecure":true}}
+        EOF
+        done
+
+        echo "Applying the root Application..."
+        prod apply -n argocd -f /argocd/root-app.yaml
+        echo "Managed clusters: prod, internal, stg. Open the UI with ./scripts/argocd-ui.sh"
+
+    networks:
+      - k8s-management
 
   # One-shot: creates core-workers-queue and seeds it with 100 messages,
   # so there's something for a future KEDA ScaledObject to scale on. Only
@@ -137,6 +237,9 @@ volumes:
   internal-data:
   stg-data:
   prod-data:
+  internal-kubeconfig:
+  stg-kubeconfig:
+  prod-kubeconfig:
   azurite-data:
 
 networks:

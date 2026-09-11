@@ -18,10 +18,11 @@ Those directories are bind-mounted into each container's
 `/var/lib/rancher/k3s/server/manifests/custom` (a subdirectory, so k3s can
 still write its own required manifests like `coredns.yaml`/`traefik.yaml`
 alongside ours), and k3s auto-applies everything under `server/manifests`
-recursively. `docker compose up -d` applies this baseline and installs Argo CD
-on prod through the separately mounted `argocd/helmchart.yaml`.
-The registration script then connects the clusters and starts GitOps deployment
-of KEDA and the workers.
+recursively. `docker compose up -d` applies this baseline, installs Argo CD
+on prod through the separately mounted `argocd/helmchart.yaml`, and - once
+all three clusters and Argo CD are healthy - the `argocd-bootstrap` service
+connects the clusters and starts GitOps deployment of KEDA and the workers.
+No script to run by hand.
 
 This repo deploys two worker variants, `worker1` and `worker2` — same
 chart, same image, same everything except the `QUEUE_NAME` env var (and,
@@ -72,8 +73,8 @@ instead of setting up a local kubeconfig.
 ## Usage
 
 ```bash
-docker compose up -d             # starts clusters and Azurite; K3s installs Argo CD
-./scripts/bootstrap-argocd.sh    # waits for Argo CD, registers clusters, applies the root Application
+docker compose up -d             # starts clusters and Azurite; K3s installs Argo CD;
+                                  # argocd-bootstrap registers clusters and applies the root Application
 ./scripts/argocd-ui.sh           # opens https://localhost:9000; keep this terminal open
 ```
 
@@ -84,13 +85,19 @@ K3s's auto-deploy directory. The root Application excludes it from its
 directory scan, leaving installation management with K3s.
 See the [K3s Helm documentation](https://docs.k3s.io/add-ons/helm).
 
-`bootstrap-argocd.sh` handles the runtime values: remote Docker IP addresses
-for prod's CoreDNS and ServiceAccount tokens for cluster registration. It
-waits for Argo CD and for populated token Secrets before applying the root
-Application. Tokens persist across restarts with the cluster volumes. Rerun
-registration after rebuilding a remote cluster or recreating containers with
-different IP addresses. Azurite's fixed IP still uses the static DNS manifests
-in `manifests/<cluster>/05-azurite-dns.yaml`.
+The `argocd-bootstrap` Compose service handles registration: it waits (via
+`depends_on: condition: service_healthy` on all three k3s services, plus its
+own in-script waits for Argo CD's Deployments) for Argo CD and for populated
+ServiceAccount token Secrets, then registers internal/stg with Argo CD and
+applies the root Application. It talks to each cluster directly over the
+`k8s-management` network using the kubeconfig each k3s server writes to
+`/etc/rancher/k3s/k3s.yaml` (shared via a per-cluster named volume), not
+`docker exec`. Tokens persist across restarts with the cluster volumes; if
+just one remote cluster's volume gets rebuilt, rerun registration with
+`docker compose up -d --force-recreate argocd-bootstrap`. internal, stg, and
+azurite all get fixed IPs in `docker-compose.yaml`, so prod's CoreDNS override
+(`manifests/prod/05-cluster-dns.yaml`) is static, git-committed YAML too -
+nothing is discovered at runtime.
 
 UI access is independent. Run `./scripts/argocd-ui.sh --password` in another
 terminal to retrieve the initial `admin` password. Stop forwarding with Ctrl+C;
