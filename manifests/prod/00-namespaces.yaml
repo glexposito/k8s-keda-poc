@@ -1,10 +1,8 @@
 # prod is the final promotion step - full production traffic, highest
 # quota tier for core-workers (see README "Namespace design
-# rationale"). `chaos-prod` is a separate, fixed platform namespace - not
-# a workload tenant - reserved for Argo CD once it's installed on this
-# cluster (see docs/argocd-setup.md); it predates and is independent of
-# the pillar model this repo used to have, which is why it kept its name
-# even after pillars were dropped.
+# rationale"). `argocd` is a separate, fixed platform namespace - not a
+# workload tenant - reserved for Argo CD, installed there by
+# scripts/bootstrap-argocd.sh.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -18,7 +16,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: chaos-prod
+  name: argocd
   labels:
     environment: prod
     stage: prod

@@ -8,7 +8,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: keda-appset
-  namespace: chaos-prod
+  namespace: argocd
 spec:
   generators:
     - list:
@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       name: 'keda-{{cluster}}'
-      namespace: chaos-prod
+      namespace: argocd
       labels:
         environment: '{{cluster}}'
         layer: governance

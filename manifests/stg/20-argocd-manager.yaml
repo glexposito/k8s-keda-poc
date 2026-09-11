@@ -1,4 +1,4 @@
-# ServiceAccount Argo CD (running in the prod cluster's chaos-prod
+# ServiceAccount Argo CD (running in the prod cluster's argocd
 # namespace) authenticates as when it manages this cluster remotely.
 # cluster-admin is used here for PoC simplicity - a real deployment would
 # scope this down to just the namespaces/resources Argo CD actually needs.

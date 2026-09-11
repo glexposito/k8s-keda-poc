@@ -11,7 +11,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: core-workers-appset
-  namespace: chaos-prod
+  namespace: argocd
 spec:
   generators:
     - matrix:
@@ -31,11 +31,11 @@ spec:
   template:
     metadata:
       # The Application name needs both {{worker}} and {{stage}} - all six
-      # Applications live together in chaos-prod, so their names have to
+      # Applications live together in argocd, so their names have to
       # be unique from each other, unlike the shared namespace they each
       # deploy into on separate clusters.
       name: 'core-workers-{{worker}}-{{stage}}'
-      namespace: chaos-prod
+      namespace: argocd
       labels:
         stage: '{{stage}}'
         environment: '{{stage}}'

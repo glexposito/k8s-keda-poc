@@ -36,7 +36,7 @@ fine and avoids a redundant suffix.
 | `core-workers` | internal | Safe to break, catches issues before anything customer-facing |
 | `core-workers` | stg      | Customer-facing canary gate for `core-workers` on prod |
 | `core-workers` | prod     | Customer-facing, full production traffic               |
-| `chaos-prod`   | prod     | Fixed platform namespace — Argo CD lives here, not a workload tenant |
+| `argocd`       | prod     | Fixed platform namespace — Argo CD lives here, not a workload tenant |
 
 Every workload namespace carries `environment`, `stage`, `cost-center`, and
 `managed-by` labels — `environment` and `stage` are the same value today
@@ -71,7 +71,7 @@ instead of setting up a local kubeconfig.
 
 ```bash
 docker compose up -d   # starts all three clusters, auto-applies manifests/internal, manifests/stg, manifests/prod
-./scripts/bootstrap-argocd.sh   # installs Argo CD into chaos-prod, registers internal and stg as managed clusters
+./scripts/bootstrap-argocd.sh   # installs Argo CD into argocd, registers internal and stg as managed clusters
 ```
 
 `bootstrap-argocd.sh` is the one step that isn't auto-applied YAML like
@@ -138,8 +138,8 @@ docker exec k3s-internal kubectl -n core-workers get pods -o wide
 docker exec k3s-internal kubectl -n core-workers get resourcequota,limitrange
 docker exec k3s-stg kubectl -n core-workers get resourcequota,limitrange
 docker exec k3s-prod kubectl -n core-workers get resourcequota,limitrange
-docker exec k3s-prod kubectl -n chaos-prod get pods                     # Argo CD components
-docker exec k3s-prod kubectl -n chaos-prod get secrets -l argocd.argoproj.io/secret-type=cluster  # managed clusters
+docker exec k3s-prod kubectl -n argocd get pods                     # Argo CD components
+docker exec k3s-prod kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=cluster  # managed clusters
 ```
 
 Tear down:

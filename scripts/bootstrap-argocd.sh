@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time bootstrap: installs Argo CD into the prod cluster's chaos-prod
+# One-time bootstrap: installs Argo CD into the prod cluster's argocd
 # namespace via the official install manifest (same as any real Argo CD
 # install, portable beyond this repo), then registers internal and stg as
 # managed clusters.
@@ -82,29 +82,58 @@ EOF
 docker exec k3s-prod kubectl rollout restart deployment/coredns -n kube-system
 docker exec k3s-prod kubectl rollout status deployment/coredns -n kube-system --timeout=60s
 
-step "Installing Argo CD into chaos-prod (official manifest, namespace-relocated via kustomize)..."
-# Plain `kubectl apply -n chaos-prod -f install.yaml` is NOT enough here:
-# the official manifest hardcodes the "argocd" namespace inside its
-# ClusterRoleBindings' subjects, which `-n` does not rewrite. That leaves
-# argocd-application-controller with a binding for the wrong identity and
-# no real permissions. kustomize's namespace transformer rewrites both
-# object namespaces and RBAC subject references correctly.
-docker exec k3s-prod mkdir -p /tmp/argocd-kustomize
-docker exec -i k3s-prod sh -c 'cat > /tmp/argocd-kustomize/kustomization.yaml' \
-  < "$REPO_ROOT/scripts/argocd-kustomize/kustomization.yaml"
-docker exec k3s-prod kubectl apply -k /tmp/argocd-kustomize --server-side --force-conflicts
-docker exec k3s-prod kubectl rollout status deployment/argocd-server -n chaos-prod --timeout=300s
+step "Installing Argo CD into argocd..."
+# Plain `kubectl apply -n argocd -f install.yaml` works cleanly here -
+# no kustomize namespace relocation needed. That used to be required
+# when this cluster's Argo CD namespace was called "chaos-prod": the
+# official manifest hardcodes the literal "argocd" namespace inside its
+# ClusterRoleBindings' subjects, and `-n <other-name>` doesn't rewrite
+# that, leaving argocd-application-controller bound to the wrong
+# identity with no real permissions. Now that this namespace is actually
+# named "argocd" (matching that hardcoded value), there's nothing left
+# to relocate.
+docker exec k3s-prod kubectl create namespace argocd --dry-run=client -o yaml | \
+  docker exec -i k3s-prod kubectl apply -f -
+docker exec k3s-prod kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+docker exec k3s-prod kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
+
+step "Sizing argocd-application-controller for multi-cluster state..."
+# The install manifest sets no `resources` on application-controller at
+# all, so it silently inherits argocd's own LimitRange default
+# (200m/256Mi - sized for this repo's lightweight demo apps, not a
+# control-plane component caching multiple clusters' full resource
+# state). Without this, application-controller gets OOMKilled once it's
+# managing more than one cluster - confirmed via `kubectl get pod ... -o
+# jsonpath='{.status.containerStatuses[0].lastState.terminated}'` showing
+# `"reason":"OOMKilled"`, silently, with no application-level error
+# logged (SIGKILL gives the process no chance to log anything). These
+# values were bumped once for 2 clusters (250m/384Mi -> 500m/768Mi) and
+# again for 3 (-> 375m/512Mi request, 750m/1024Mi limit) - not
+# independently load-tested beyond that, so re-check
+# `lastState.terminated.reason` if application-controller still churns.
+docker exec k3s-prod kubectl patch statefulset argocd-application-controller -n argocd --type=json -p '[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/resources",
+    "value": {
+      "requests": {"cpu": "375m", "memory": "512Mi"},
+      "limits": {"cpu": "750m", "memory": "1024Mi"}
+    }
+  }
+]'
+docker exec k3s-prod kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=120s
 
 step "Registering internal and stg as managed clusters..."
 for cluster in "${REMOTE_CLUSTERS[@]}"; do
   token=$(docker exec "k3s-$cluster" kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
 
-  docker exec -i k3s-prod kubectl apply -n chaos-prod -f - <<EOF
+  docker exec -i k3s-prod kubectl apply -n argocd -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
   name: ${cluster}-cluster
-  namespace: chaos-prod
+  namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
 type: Opaque
@@ -129,16 +158,16 @@ step "Restarting application-controller so it picks up the new registrations..."
 # even attempted, while prod-targeting ones (known since startup) worked
 # fine. Restarting after registration forces a clean connection attempt
 # with all clusters known from the start.
-docker exec k3s-prod kubectl delete pod -n chaos-prod -l app.kubernetes.io/name=argocd-application-controller
-docker exec k3s-prod kubectl rollout status statefulset/argocd-application-controller -n chaos-prod --timeout=120s
+docker exec k3s-prod kubectl delete pod -n argocd -l app.kubernetes.io/name=argocd-application-controller
+docker exec k3s-prod kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=120s
 
 step "Applying root Application (app-of-apps)..."
-docker exec -i k3s-prod kubectl apply -n chaos-prod -f - < "$REPO_ROOT/argocd/root-app.yaml"
+docker exec -i k3s-prod kubectl apply -n argocd -f - < "$REPO_ROOT/argocd/root-app.yaml"
 
 step "Exposing Argo CD UI on the host..."
-docker exec -d k3s-prod kubectl port-forward -n chaos-prod svc/argocd-server --address 0.0.0.0 9000:443
+docker exec -d k3s-prod kubectl port-forward -n argocd svc/argocd-server --address 0.0.0.0 9000:443
 
-ARGOCD_PASS=$(docker exec k3s-prod kubectl -n chaos-prod get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
+ARGOCD_PASS=$(docker exec k3s-prod kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
 echo ""
 echo "Argo CD:          https://localhost:9000  (admin / $ARGOCD_PASS)"
 echo "Managed clusters: prod (in-cluster), internal (https://k3s-internal:6443), stg (https://k3s-stg:6443)"

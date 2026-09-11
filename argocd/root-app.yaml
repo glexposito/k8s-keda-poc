@@ -15,7 +15,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: root
-  namespace: chaos-prod
+  namespace: argocd
   labels:
     layer: bootstrap
 spec:
@@ -28,7 +28,7 @@ spec:
       recurse: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: chaos-prod
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true

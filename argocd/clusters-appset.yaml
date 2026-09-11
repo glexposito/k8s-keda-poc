@@ -7,7 +7,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: clusters-appset
-  namespace: chaos-prod
+  namespace: argocd
 spec:
   generators:
     - list:
@@ -21,7 +21,7 @@ spec:
   template:
     metadata:
       name: 'manifests-{{cluster}}'
-      namespace: chaos-prod
+      namespace: argocd
       labels:
         environment: '{{cluster}}'
         layer: governance
