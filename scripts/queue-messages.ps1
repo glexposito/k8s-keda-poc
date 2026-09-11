@@ -80,6 +80,8 @@ for sdk_path in /usr/lib*/az/lib/python*/site-packages /opt/az/lib/python*/site-
 done
 exec "$python_cmd" - "$@"
 '@
+# Here-strings preserve Windows CRLF endings, which /bin/sh cannot parse.
+$ShWrapper = $ShWrapper.Replace("`r`n", "`n")
 
 $PythonScript = @'
 import os
