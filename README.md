@@ -5,6 +5,24 @@ labels, and per-namespace guardrails in Kubernetes — before we wire up the
 real GitOps flow. Anyone can clone this and spin up three local k3s clusters
 to poke around.
 
+## Design philosophy
+
+KISS — keep it simple, stupid. Every design decision in this repo picks the
+boring, obvious option over the clever one, even when the clever option is
+more "correct." A few examples baked into the repo, not just claimed:
+
+- Fixed IP addresses in `docker-compose.yaml` instead of a script that runs
+  `docker inspect` to discover them at runtime.
+- Kubernetes' own `NodePort` service for the Argo CD UI instead of a script
+  wrapping `kubectl port-forward` in a background process.
+- Compose healthchecks (`condition: service_healthy`) instead of a
+  hand-rolled polling loop waiting for clusters to come up.
+- A hardcoded demo password instead of a secrets-management story this PoC
+  doesn't need.
+
+If a change here needs more moving parts than the problem actually has,
+that's a sign to simplify the approach, not to add another script.
+
 ## What this shows
 
 Three independent single-node k3s clusters running as Docker containers:
@@ -28,9 +46,9 @@ This repo deploys two worker variants, `worker1` and `worker2` — same
 chart, same image, same everything except the `QUEUE_NAME` env var (and,
 once KEDA is added, their scaling rules) — both into a namespace called
 `core-workers` on each cluster. The namespace name doesn't carry a stage
-suffix: each cluster is already dedicated to one environment (silo model,
-see "Namespace design rationale" below), so the cluster boundary is what
-tells `core-workers` on `internal` apart from `core-workers` on `prod` —
+suffix: each cluster is already dedicated to one environment (silo model),
+so the cluster boundary is what tells `core-workers` on `internal` apart
+from `core-workers` on `prod` —
 namespace names aren't global, so reusing the same one across clusters is
 fine and avoids a redundant suffix.
 
@@ -115,20 +133,12 @@ docker exec k3s-prod kubectl -n kube-system get helmchart argocd
 docker exec k3s-prod kubectl -n kube-system logs job/helm-install-argocd
 ```
 
-Existing clusters installed by the old script continue to work with the
-registration and UI helpers. The new HelmChart is a fresh-install path, not an
-automatic migration of that installation: Helm will reject existing resources
-without Helm ownership, and some workload selectors also differ. Before
-recreating prod with the new Compose mount, plan a migration of the existing
-Argo CD resources or use a separate fresh cluster. The refactor itself does not
-recreate containers or delete cluster volumes.
-
 The `argocd/` directory holds the app-of-apps bootstrap:
 
 - `helmchart.yaml` — installed directly by K3s through the Compose file mount;
   excluded from the root Application's scan.
-- `root-app.yaml` — applied once by the script; the ApplicationSets and
-  AppProjects here are then picked up and synced automatically.
+- `root-app.yaml` — applied once by `argocd-bootstrap`; the ApplicationSets
+  and AppProjects here are then picked up and synced automatically.
 - `clusters-appset.yaml` — one `Application` per cluster, syncing
   `manifests/<cluster>/` (namespaces, quotas, RBAC, network policies) via
   GitOps instead of k3s's own auto-deploy mount.
@@ -215,3 +225,6 @@ On Windows, `scripts/queue-messages.ps1` is the same tool for PowerShell 7+
 docker compose down            # keep volumes (cluster state persists)
 docker compose down -v         # also wipe cluster state
 ```
+
+If you rebuild just one remote cluster's volume (not the whole stack),
+re-register it with `docker compose up -d --force-recreate argocd-bootstrap`.
