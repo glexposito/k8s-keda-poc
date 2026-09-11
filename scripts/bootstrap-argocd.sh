@@ -41,7 +41,14 @@ step "Teaching prod's CoreDNS how to resolve each remote cluster..."
 # it isn't guaranteed stable across restarts.
 COREDNS_DATA=""
 for cluster in "${REMOTE_CLUSTERS[@]}"; do
-  ip=$(docker inspect "k3s-$cluster" --format '{{(index .NetworkSettings.Networks "k8s-layout-poc_k8s-management").IPAddress}}')
+  # Each container only ever joins the one network docker-compose.yaml
+  # defines (k8s-management), so grab whichever network it's on rather
+  # than hardcoding the network's full name - that name is
+  # "<compose-project-name>_k8s-management", and the project name
+  # defaults to the current directory's basename, so a hardcoded value
+  # here silently breaks the moment this directory is renamed or cloned
+  # somewhere else.
+  ip=$(docker inspect "k3s-$cluster" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
   COREDNS_DATA+="  ${cluster}.override: |
     template IN A {
       match \"^k3s-${cluster}\\.\"

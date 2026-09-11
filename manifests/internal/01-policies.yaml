@@ -1,10 +1,11 @@
 # Per-namespace governance: caps resource usage and isolates namespaces
 # from each other at the network layer. k3s enables its kube-router
 # network policy controller by default, so these NetworkPolicies are
-# actually enforced (not just descriptive). Sized to hold 50 replicas (see
-# charts/core-workers/values.yaml - requests.cpu: 50m/requests.memory:
-# 64Mi per pod) plus a small amount of rollout headroom - the smallest
-# tier of any cluster, since internal is the lowest-risk environment.
+# actually enforced (not just descriptive). internal runs
+# replicaCount: 1 (see charts/core-workers/values-internal.yaml), so this
+# quota is generous headroom above that floor, not a tight fit - the
+# smallest tier of any cluster, since internal is the lowest-risk
+# environment.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -12,11 +13,11 @@ metadata:
   namespace: core-workers
 spec:
   hard:
-    requests.cpu: "3"
-    requests.memory: 4Gi
-    limits.cpu: "6"
-    limits.memory: 8Gi
-    pods: "60"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    pods: "10"
 ---
 apiVersion: v1
 kind: LimitRange

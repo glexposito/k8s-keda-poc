@@ -1,4 +1,6 @@
-replicaCount: 50
+# Generic single-instance default - every stage below overrides this
+# explicitly, same as appEnvironment.
+replicaCount: 1
 
 image:
   repository: nginxdemos/hello
@@ -29,9 +31,9 @@ rollingUpdate:
   maxSurge: 1
 
 # Sized per-worker, not per-deployment - deliberately light, since the
-# quota that actually caps this (manifests/<cluster>/01-policies.yaml) has
-# to hold 50 of these plus rollout headroom in even the smallest
-# environment (internal).
+# quota that actually caps this (manifests/<cluster>/01-policies.yaml)
+# has to hold this many of these, per environment's replicaCount below,
+# plus rollout/scaling headroom.
 resources:
   requests:
     cpu: 50m

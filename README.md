@@ -52,8 +52,9 @@ Every cluster's `core-workers` namespace also has its own `ResourceQuota`, a
 defined per cluster in `manifests/<cluster>/01-policies.yaml`, so the exact
 same namespace name can carry a completely different quota on each cluster
 (they're separate API servers; nothing links them by name). `core-workers`
-runs 50 replicas everywhere, so quotas are sized to hold that floor plus
-rollout headroom, graduated by environment: `internal` is smallest, `stg`
+runs a different `replicaCount` per environment (`internal`: 1, `stg`: 2,
+`prod`: 5), and quotas are sized to hold each floor plus headroom for
+future scale-up, graduated by environment: `internal` is smallest, `stg`
 is mid-sized, `prod` is largest.
 
 ## Prerequisites
@@ -97,10 +98,10 @@ All of these reference this repo's real remote
 sync as-is once Argo CD is running.
 
 `charts/core-workers` is a small, generic Helm chart (not tied to any real
-app or company) — one `values.yaml` with shared defaults (including
-`replicaCount: 50`) plus `values-internal.yaml`/`values-stg.yaml`/
-`values-prod.yaml` overrides that only set the `APP_ENV` env var, matching
-this repo's three environments. `charts/common` holds shared name/label
+app or company) — one `values.yaml` with shared defaults (including a
+generic `replicaCount: 1`) plus `values-internal.yaml`/`values-stg.yaml`/
+`values-prod.yaml` overrides that set both `replicaCount` (1/2/5) and the
+`APP_ENV` env var per environment. `charts/common` holds shared name/label
 helpers used by the chart.
 
 Then explore (pick the container for the cluster you want: `k3s-internal`,
