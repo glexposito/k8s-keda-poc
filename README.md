@@ -96,35 +96,9 @@ docker compose up -d             # starts clusters and Azurite; K3s installs Arg
 ```
 
 That's the whole workflow - open https://localhost:9000 (`admin` / `123`) once
-Argo CD is up. Nothing else to run.
-
-Argo CD installation is managed by K3s's built-in Helm controller. The
-`HelmChart` pins chart `10.8.4` (Argo CD `v3.5.2`) and declares the application
-controller's CPU and memory settings. Compose mounts only this file into
-K3s's auto-deploy directory. The root Application excludes it from its
-directory scan, leaving installation management with K3s.
-See the [K3s Helm documentation](https://docs.k3s.io/add-ons/helm).
-
-The `argocd-bootstrap` Compose service handles registration: it waits (via
-`depends_on: condition: service_healthy` on all three k3s services, plus its
-own in-script waits for Argo CD's Deployments) for Argo CD and for populated
-ServiceAccount token Secrets, then registers internal/stg with Argo CD and
-applies the root Application. It talks to each cluster directly over the
-`k8s-management` network using the kubeconfig each k3s server writes to
-`/etc/rancher/k3s/k3s.yaml` (shared via a per-cluster named volume), not
-`docker exec`. Tokens persist across restarts with the cluster volumes; if
-just one remote cluster's volume gets rebuilt, rerun registration with
-`docker compose up -d --force-recreate argocd-bootstrap`. internal, stg, and
-azurite all get fixed IPs in `docker-compose.yaml`, so prod's CoreDNS override
-(`manifests/prod/05-cluster-dns.yaml`) is static, git-committed YAML too -
-nothing is discovered at runtime.
-
-UI access needs no script or `kubectl port-forward`: `argocd/helmchart.yaml`
-sets `server.service.type: NodePort` on `30090`, mapped to host port 9000 in
-`docker-compose.yaml`, and pins the `admin` password to `123` via
-`configs.secret.argocdServerAdminPassword` (a bcrypt hash committed in that
-file) - fine for a throwaway local PoC that never leaves `localhost`, not a
-pattern to copy for anything real.
+Argo CD is up. Nothing else to run. See `argocd/helmchart.yaml` and the
+`argocd-bootstrap` service in `docker-compose.yaml` for how - both are
+commented inline.
 
 For a fresh install, inspect the Helm job if Argo CD does not become ready:
 
