@@ -200,6 +200,15 @@ already be running (`docker compose up -d azurite`). `add` creates the queue if
 it does not exist. An optional final argument selects another queue, for example
 `./scripts/queue-messages.sh add 10 test-queue`. Run with `--help` for usage.
 
+On Windows, `scripts/queue-messages.ps1` is the same tool for PowerShell 7+
+(`pwsh`) - same subcommands, same output, same underlying `queue-seed` image:
+
+```powershell
+./scripts/queue-messages.ps1 add 100
+./scripts/queue-messages.ps1 remove 95
+./scripts/queue-messages.ps1 count
+```
+
 ### Tear down
 
 ```bash
