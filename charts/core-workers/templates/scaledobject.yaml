@@ -20,7 +20,7 @@ spec:
     horizontalPodAutoscalerConfig:
       behavior:
         scaleDown:
-          stabilizationWindowSeconds: {{ .Values.scaling.cooldownPeriod }}
+          stabilizationWindowSeconds: {{ .Values.scaling.scaleDownStabilizationSeconds }}
   triggers:
     - type: azure-queue
       metadata:

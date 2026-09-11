@@ -29,15 +29,21 @@ queueName: default-queue
 # templates/scaledobject.yaml) - this default (1 replica per 5 messages)
 # only applies if a stage override is ever missing.
 #
-# pollingInterval/cooldownPeriod are intentionally not overridden
-# per-stage: they're PoC demo pacing (KEDA's defaults are 30s/300s,
-# too slow to watch live), not a risk-tier concern like the other three.
+# pollingInterval/cooldownPeriod/scaleDownStabilizationSeconds are
+# intentionally not overridden per-stage: they're PoC demo pacing, not a
+# risk-tier concern like the other three. cooldownPeriod governs KEDA's
+# own N->0 scale-down (default 300s); scaleDownStabilizationSeconds
+# governs the underlying HPA's N->1 scale-down (Kubernetes default
+# 300s) - two different controllers, kept as separate values even
+# though they're set to the same number here, so tuning one doesn't
+# silently change the other.
 scaling:
   minReplicaCount: 0
   maxReplicaCount: 1
   queueLength: 5
   pollingInterval: 10
   cooldownPeriod: 30
+  scaleDownStabilizationSeconds: 30
 
 # Azurite's fixed, publicly-documented local development account -
 # identical on every Azurite install everywhere, not a real secret. Pods
