@@ -1,8 +1,9 @@
 # App-of-apps bootstrap: the one Application applied manually (by
 # scripts/bootstrap-argocd.sh), pointing at this argocd/ directory itself.
-# Once this exists, everything else in here (the ApplicationSets and
-# AppProjects, and whatever the ApplicationSets generate) is picked up and
+# Once this exists, the other GitOps manifests here (the ApplicationSets and
+# AppProjects, and whatever the ApplicationSets generate) are picked up and
 # synced automatically - no further manual kubectl apply needed.
+# helmchart.yaml is excluded because K3s manages the Argo CD installation.
 #
 # directory.recurse is required: Argo CD's directory source is
 # non-recursive by default, so without it argocd/projects/*.yaml would be
@@ -26,6 +27,7 @@ spec:
     path: argocd
     directory:
       recurse: true
+      exclude: helmchart.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

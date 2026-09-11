@@ -18,8 +18,10 @@ Those directories are bind-mounted into each container's
 `/var/lib/rancher/k3s/server/manifests/custom` (a subdirectory, so k3s can
 still write its own required manifests like `coredns.yaml`/`traefik.yaml`
 alongside ours), and k3s auto-applies everything under `server/manifests`
-recursively — `docker compose up -d` alone is enough to get a fully-seeded
-cluster, no separate apply step needed.
+recursively. `docker compose up -d` applies this baseline and installs Argo CD
+on prod through the separately mounted `argocd/helmchart.yaml`.
+The registration script then connects the clusters and starts GitOps deployment
+of KEDA and the workers.
 
 This repo deploys two worker variants, `worker1` and `worker2` — same
 chart, same image, same everything except the `QUEUE_NAME` env var (and,
@@ -70,29 +72,52 @@ instead of setting up a local kubeconfig.
 ## Usage
 
 ```bash
-docker compose up -d   # starts all three clusters, auto-applies manifests/internal, manifests/stg, manifests/prod
-./scripts/bootstrap-argocd.sh   # installs Argo CD into argocd, registers internal and stg as managed clusters
+docker compose up -d             # starts clusters and Azurite; K3s installs Argo CD
+./scripts/bootstrap-argocd.sh    # waits for Argo CD, registers clusters, applies the root Application
+./scripts/argocd-ui.sh           # opens https://localhost:9000; keep this terminal open
 ```
 
-`bootstrap-argocd.sh` is the one step that isn't auto-applied YAML like
-everything else — installing Argo CD itself, and bridging a cross-cluster
-credential from `internal` and from `stg` into `prod`, both require reading
-live values generated at boot, not just dropping a static file in
-`manifests/`. KEDA-based autoscaling doesn't need an equivalent script:
-pods need to resolve `azurite` (the local Azure Storage Queue emulator
-started by `docker-compose.yaml`) by name, which sounds like the same
-cross-cluster DNS problem `bootstrap-argocd.sh` solves for `k3s-internal`/
-`k3s-stg` - but azurite has a fixed IP
-(`docker-compose.yaml`'s `k8s-management` network has a defined subnet
-specifically so it can get one), so the CoreDNS override is a known,
-constant value instead of something that has to be discovered at runtime.
-It's just static YAML, `manifests/<cluster>/05-azurite-dns.yaml`, applied
-the same way as everything else.
+Argo CD installation is managed by K3s's built-in Helm controller. The
+`HelmChart` pins chart `10.8.4` (Argo CD `v3.5.2`) and declares the application
+controller's CPU and memory settings. Compose mounts only this file into
+K3s's auto-deploy directory. The root Application excludes it from its
+directory scan, leaving installation management with K3s.
+See the [K3s Helm documentation](https://docs.k3s.io/add-ons/helm).
+
+`bootstrap-argocd.sh` handles the runtime values: remote Docker IP addresses
+for prod's CoreDNS and ServiceAccount tokens for cluster registration. It
+waits for Argo CD and for populated token Secrets before applying the root
+Application. Tokens persist across restarts with the cluster volumes. Rerun
+registration after rebuilding a remote cluster or recreating containers with
+different IP addresses. Azurite's fixed IP still uses the static DNS manifests
+in `manifests/<cluster>/05-azurite-dns.yaml`.
+
+UI access is independent. Run `./scripts/argocd-ui.sh --password` in another
+terminal to retrieve the initial `admin` password. Stop forwarding with Ctrl+C;
+restart the helper whenever you need the UI. If another forward already owns
+port 9000, use it or stop it before starting a new one.
+
+For a fresh install, inspect the Helm job if Argo CD does not become ready:
+
+```bash
+docker exec k3s-prod kubectl -n kube-system get helmchart argocd
+docker exec k3s-prod kubectl -n kube-system logs job/helm-install-argocd
+```
+
+Existing clusters installed by the old script continue to work with the
+registration and UI helpers. The new HelmChart is a fresh-install path, not an
+automatic migration of that installation: Helm will reject existing resources
+without Helm ownership, and some workload selectors also differ. Before
+recreating prod with the new Compose mount, plan a migration of the existing
+Argo CD resources or use a separate fresh cluster. The refactor itself does not
+recreate containers or delete cluster volumes.
 
 The `argocd/` directory holds the app-of-apps bootstrap:
 
-- `root-app.yaml` — applied once by the script; everything else here is
-  then picked up and synced automatically.
+- `helmchart.yaml` — installed directly by K3s through the Compose file mount;
+  excluded from the root Application's scan.
+- `root-app.yaml` — applied once by the script; the ApplicationSets and
+  AppProjects here are then picked up and synced automatically.
 - `clusters-appset.yaml` — one `Application` per cluster, syncing
   `manifests/<cluster>/` (namespaces, quotas, RBAC, network policies) via
   GitOps instead of k3s's own auto-deploy mount.
@@ -142,7 +167,29 @@ docker exec k3s-prod kubectl -n argocd get pods                     # Argo CD co
 docker exec k3s-prod kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=cluster  # managed clusters
 ```
 
-Tear down:
+### Queue messages
+
+Use the helper to change the queue depth while watching KEDA scale the workers:
+
+```bash
+./scripts/queue-messages.sh add 100      # append 100 demo messages
+./scripts/queue-messages.sh remove 95    # delete up to 95 visible messages
+./scripts/queue-messages.sh count        # show the approximate message count
+```
+
+The default queue is `core-workers-queue`, shared by both workers in all three
+clusters. The amount is how many messages to add or remove, not the desired
+final count. For example, removing 95 from 100 leaves 5 if nothing else changes
+the queue. Removal preserves the remaining messages and stops if no more
+visible messages are available; the count also includes invisible messages.
+
+The script uses the existing `queue-seed` Compose image and connection settings,
+so no Python or Azure CLI installation is needed on the host. Azurite must
+already be running (`docker compose up -d azurite`). `add` creates the queue if
+it does not exist. An optional final argument selects another queue, for example
+`./scripts/queue-messages.sh add 10 test-queue`. Run with `--help` for usage.
+
+### Tear down
 
 ```bash
 docker compose down            # keep volumes (cluster state persists)

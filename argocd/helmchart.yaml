@@ -1,0 +1,28 @@
+# +argocd:skip-file-rendering
+# K3s owns this installer through a dedicated Compose file mount. The root
+# Application excludes it; the skip directive also protects the first sync
+# before an existing root Application has picked up that exclusion.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argocd
+  namespace: kube-system
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  version: 10.8.4 # Argo CD v3.5.2
+  targetNamespace: argocd
+  createNamespace: true
+  timeout: 600s
+  # Keep an existing release on failure instead of uninstalling it and retrying.
+  failurePolicy: abort
+  valuesContent: |-
+    fullnameOverride: argocd
+    controller:
+      resources:
+        requests:
+          cpu: 375m
+          memory: 512Mi
+        limits:
+          cpu: 750m
+          memory: 1024Mi

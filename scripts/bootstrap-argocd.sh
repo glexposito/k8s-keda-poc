@@ -1,70 +1,33 @@
 #!/usr/bin/env bash
-# One-time bootstrap: installs Argo CD into the prod cluster's argocd
-# namespace via the official install manifest (same as any real Argo CD
-# install, portable beyond this repo), then registers internal and stg as
-# managed clusters.
-#
-# This can't be pure auto-applied YAML like everything in manifests/ - all
-# three clusters generate independent, fresh credentials on every boot, so
-# bridging internal's and stg's ServiceAccount tokens into prod's Argo CD
-# means reading a live value and writing it elsewhere. It also has to patch
-# prod's CoreDNS with each remote cluster's current docker-network IP (also
-# not stable across restarts) so prod's Argo CD can even reach their API
-# servers by name.
-# Run this after `docker compose up -d`, once all three clusters are healthy.
+# Register the remote clusters and start GitOps after Compose starts K3s.
+# Argo CD installation and resources live in argocd/helmchart.yaml.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# The remote clusters prod's Argo CD needs to reach by name - everything
-# else in this script (CoreDNS override, token bridging, cluster
-# registration) loops over this list, so adding a fourth remote cluster
-# later is a one-line change here plus a manifests/<name>/ directory.
 REMOTE_CLUSTERS=(internal stg)
-
 step() { echo "==> $*"; }
 
 step "Waiting for all clusters to be ready..."
-docker exec k3s-prod kubectl wait --for=condition=ready node --all --timeout=120s
-for cluster in "${REMOTE_CLUSTERS[@]}"; do
+for cluster in prod "${REMOTE_CLUSTERS[@]}"; do
+  deadline=$((SECONDS + 120))
+  until docker exec "k3s-$cluster" kubectl get --raw=/readyz --request-timeout=2s >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      echo "Timed out waiting for the k3s-$cluster API." >&2
+      exit 1
+    fi
+    sleep 2
+  done
+  docker exec "k3s-$cluster" kubectl wait --for=create node --all --timeout=120s
   docker exec "k3s-$cluster" kubectl wait --for=condition=ready node --all --timeout=120s
 done
 
-step "Teaching prod's CoreDNS how to resolve each remote cluster..."
-# Uses `kubectl patch --type merge` (JSON Merge Patch, RFC 7386) instead
-# of `apply`, so this doesn't wipe the "azurite.override" key that
-# manifests/prod/05-azurite-dns.yaml auto-applies (via k3s at boot) or
-# Argo CD (via clusters-appset.yaml) writes to this same coredns-custom
-# ConfigMap. Plain `apply` (client-side OR --server-side) was tried first
-# and both got this wrong when tested against a second, independent
-# writer of a different key on the same object: client-side apply's
-# 3-way merge treats a key missing from the new manifest as "removed"
-# once it's been through one apply cycle, and ConfigMap.data turned out
-# to be an atomic map for server-side apply purposes too - a partial
-# server-side apply replaced the *whole* map rather than merging by key,
-# confirmed live by watching one apply silently delete another's entries.
-# JSON Merge Patch is the one operation that's actually guaranteed to
-# merge nested map keys instead of replacing the map wholesale,
-# independent of how the object was created or which manager touched it
-# last.
-# docker-compose's DNS (which resolves container names like "k3s-internal")
-# only works from the k3s-prod container's own network namespace, not from
-# inside a pod's separate network namespace - so prod's CoreDNS can't
-# resolve a remote cluster's hostname on its own, even though the
-# containers share a docker network. This adds a k3s-supported CoreDNS
-# customization (a `coredns-custom` ConfigMap) mapping each hostname to
-# that cluster's current docker-network IP, discovered fresh here since
-# it isn't guaranteed stable across restarts.
+step "Configuring prod DNS for the remote clusters..."
+# Docker assigns these addresses at container creation. Merge only our keys so
+# the separately managed azurite.override entry is preserved.
 COREDNS_DATA=""
 for cluster in "${REMOTE_CLUSTERS[@]}"; do
-  # Each container only ever joins the one network docker-compose.yaml
-  # defines (k8s-management), so grab whichever network it's on rather
-  # than hardcoding the network's full name - that name is
-  # "<compose-project-name>_k8s-management", and the project name
-  # defaults to the current directory's basename, so a hardcoded value
-  # here silently breaks the moment this directory is renamed or cloned
-  # somewhere else.
   ip=$(docker inspect "k3s-$cluster" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+  [[ -n "$ip" ]] || { echo "No Docker IP found for k3s-$cluster." >&2; exit 1; }
   COREDNS_DATA+="  ${cluster}.override: |
     template IN A {
       match \"^k3s-${cluster}\\.\"
@@ -73,61 +36,30 @@ for cluster in "${REMOTE_CLUSTERS[@]}"; do
     }
 "
 done
-docker exec k3s-prod kubectl get configmap coredns-custom -n kube-system >/dev/null 2>&1 || \
-  docker exec k3s-prod kubectl create configmap coredns-custom -n kube-system
+docker exec k3s-prod kubectl -n kube-system wait --for=create configmap/coredns-custom --timeout=120s
 docker exec -i k3s-prod kubectl patch configmap coredns-custom -n kube-system --type merge --patch-file=/dev/stdin <<EOF
 data:
 $COREDNS_DATA
 EOF
 docker exec k3s-prod kubectl rollout restart deployment/coredns -n kube-system
-docker exec k3s-prod kubectl rollout status deployment/coredns -n kube-system --timeout=60s
+docker exec k3s-prod kubectl rollout status deployment/coredns -n kube-system --timeout=120s
 
-step "Installing Argo CD into argocd..."
-# Plain `kubectl apply -n argocd -f install.yaml` works cleanly here -
-# no kustomize namespace relocation needed. That used to be required
-# when this cluster's Argo CD namespace was called "chaos-prod": the
-# official manifest hardcodes the literal "argocd" namespace inside its
-# ClusterRoleBindings' subjects, and `-n <other-name>` doesn't rewrite
-# that, leaving argocd-application-controller bound to the wrong
-# identity with no real permissions. Now that this namespace is actually
-# named "argocd" (matching that hardcoded value), there's nothing left
-# to relocate.
-docker exec k3s-prod kubectl create namespace argocd --dry-run=client -o yaml | \
-  docker exec -i k3s-prod kubectl apply -f -
-docker exec k3s-prod kubectl apply -n argocd --server-side --force-conflicts \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-docker exec k3s-prod kubectl rollout status deployment/argocd-server -n argocd --timeout=300s
-
-step "Sizing argocd-application-controller for multi-cluster state..."
-# The install manifest sets no `resources` on application-controller at
-# all, so it silently inherits argocd's own LimitRange default
-# (200m/256Mi - sized for this repo's lightweight demo apps, not a
-# control-plane component caching multiple clusters' full resource
-# state). Without this, application-controller gets OOMKilled once it's
-# managing more than one cluster - confirmed via `kubectl get pod ... -o
-# jsonpath='{.status.containerStatuses[0].lastState.terminated}'` showing
-# `"reason":"OOMKilled"`, silently, with no application-level error
-# logged (SIGKILL gives the process no chance to log anything). These
-# values were bumped once for 2 clusters (250m/384Mi -> 500m/768Mi) and
-# again for 3 (-> 375m/512Mi request, 750m/1024Mi limit) - not
-# independently load-tested beyond that, so re-check
-# `lastState.terminated.reason` if application-controller still churns.
-docker exec k3s-prod kubectl patch statefulset argocd-application-controller -n argocd --type=json -p '[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/0/resources",
-    "value": {
-      "requests": {"cpu": "375m", "memory": "512Mi"},
-      "limits": {"cpu": "750m", "memory": "1024Mi"}
-    }
-  }
-]'
-docker exec k3s-prod kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=120s
+step "Waiting for Argo CD..."
+# On a fresh cluster the Helm controller must create these workloads first.
+# Existing installations can also use this registration script independently.
+for workload in deployment/argocd-server deployment/argocd-repo-server \
+  deployment/argocd-applicationset-controller statefulset/argocd-application-controller; do
+  docker exec k3s-prod kubectl -n argocd wait --for=create "$workload" --timeout=600s
+  docker exec k3s-prod kubectl -n argocd rollout status "$workload" --timeout=300s
+done
 
 step "Registering internal and stg as managed clusters..."
 for cluster in "${REMOTE_CLUSTERS[@]}"; do
+  # The token controller fills this Secret asynchronously. Tokens persist with
+  # the cluster volumes; read them again after a cluster is rebuilt.
+  docker exec "k3s-$cluster" kubectl -n kube-system wait --for=create secret/argocd-manager-token --timeout=120s
+  docker exec "k3s-$cluster" kubectl -n kube-system wait --for=jsonpath='{.data.token}' secret/argocd-manager-token --timeout=120s
   token=$(docker exec "k3s-$cluster" kubectl -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
-
   docker exec -i k3s-prod kubectl apply -n argocd -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -141,33 +73,11 @@ stringData:
   name: ${cluster}
   server: https://k3s-${cluster}:6443
   config: |
-    {
-      "bearerToken": "$token",
-      "tlsClientConfig": {
-        "insecure": true
-      }
-    }
+    {"bearerToken":"$token","tlsClientConfig":{"insecure":true}}
 EOF
 done
+unset token
 
-step "Restarting application-controller so it picks up the new registrations..."
-# argocd-application-controller started (in the previous step) before the
-# cluster secrets existed. Argo CD is supposed to notice new cluster
-# secrets dynamically, but in testing this was unreliable - Applications
-# targeting a remote cluster would sit with empty status forever, never
-# even attempted, while prod-targeting ones (known since startup) worked
-# fine. Restarting after registration forces a clean connection attempt
-# with all clusters known from the start.
-docker exec k3s-prod kubectl delete pod -n argocd -l app.kubernetes.io/name=argocd-application-controller
-docker exec k3s-prod kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=120s
-
-step "Applying root Application (app-of-apps)..."
+step "Applying the root Application..."
 docker exec -i k3s-prod kubectl apply -n argocd -f - < "$REPO_ROOT/argocd/root-app.yaml"
-
-step "Exposing Argo CD UI on the host..."
-docker exec -d k3s-prod kubectl port-forward -n argocd svc/argocd-server --address 0.0.0.0 9000:443
-
-ARGOCD_PASS=$(docker exec k3s-prod kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
-echo ""
-echo "Argo CD:          https://localhost:9000  (admin / $ARGOCD_PASS)"
-echo "Managed clusters: prod (in-cluster), internal (https://k3s-internal:6443), stg (https://k3s-stg:6443)"
+echo "Managed clusters: prod, internal, stg. Open the UI with ./scripts/argocd-ui.sh"

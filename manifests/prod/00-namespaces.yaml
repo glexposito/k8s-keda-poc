@@ -1,8 +1,8 @@
 # prod is the final promotion step - full production traffic, highest
 # quota tier for core-workers (see README "Namespace design
 # rationale"). `argocd` is a separate, fixed platform namespace - not a
-# workload tenant - reserved for Argo CD, installed there by
-# scripts/bootstrap-argocd.sh.
+# workload tenant - reserved for Argo CD, installed there by the K3s
+# HelmChart in argocd/helmchart.yaml.
 apiVersion: v1
 kind: Namespace
 metadata:

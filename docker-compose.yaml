@@ -57,11 +57,12 @@ services:
 
     ports:
       - "6445:6443"
-      - "9000:9000"   # Argo CD UI, exposed by scripts/bootstrap-argocd.sh
+      - "9000:9000"   # Argo CD UI, exposed by scripts/argocd-ui.sh
 
     volumes:
       - prod-data:/var/lib/rancher/k3s
       - ./manifests/prod:/var/lib/rancher/k3s/server/manifests/custom:ro
+      - ./argocd/helmchart.yaml:/var/lib/rancher/k3s/server/manifests/argocd-helmchart.yaml:ro
 
     networks:
       - k8s-management
