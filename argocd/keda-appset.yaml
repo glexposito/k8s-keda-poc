@@ -41,3 +41,12 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+          # KEDA's scaledjobs.keda.sh CRD has a large enough OpenAPI
+          # schema that client-side apply's kubectl.kubernetes.io/
+          # last-applied-configuration annotation exceeds Kubernetes'
+          # 262144-byte annotation size limit - confirmed live via
+          # keda-prod's actual sync error ("metadata.annotations: Too
+          # long"). Server-side apply doesn't store that annotation at
+          # all, which is the documented fix for this exact class of
+          # large-CRD chart.
+          - ServerSideApply=true
