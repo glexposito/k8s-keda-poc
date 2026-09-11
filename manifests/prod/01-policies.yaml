@@ -1,0 +1,91 @@
+# Per-namespace governance: caps resource usage and isolates namespaces
+# from each other at the network layer. k3s enables its kube-router
+# network policy controller by default, so these NetworkPolicies are
+# actually enforced (not just descriptive). core-workers's quota is
+# sized to hold 50 replicas (see charts/core-workers/values.yaml -
+# requests.cpu: 50m/requests.memory: 64Mi per pod) plus rollout/scaling
+# headroom - the largest tier of any cluster, since it carries full
+# production traffic. chaos-prod's quota is unrelated to core-workers -
+# it's sized to comfortably hold Argo CD's own components (see
+# docs/argocd-setup.md).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: core-workers-quota
+  namespace: core-workers
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: 8Gi
+    limits.cpu: "12"
+    limits.memory: 16Gi
+    pods: "120"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: core-workers
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 100m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace-only
+  namespace: core-workers
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: platform-quota
+  namespace: chaos-prod
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.cpu: "8"
+    limits.memory: 8Gi
+    pods: "40"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: chaos-prod
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 200m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace-only
+  namespace: chaos-prod
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}

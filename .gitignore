@@ -1,0 +1,2 @@
+# Vendored Helm subchart archives - rebuilt via `helm dependency build`
+charts/*/charts/

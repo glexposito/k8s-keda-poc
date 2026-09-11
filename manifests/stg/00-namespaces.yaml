@@ -1,0 +1,12 @@
+# stg is customer-facing - a canary gate ahead of prod - kept on its own
+# cluster for isolation even though it's a lighter tier than prod (see
+# README "Namespace design rationale").
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: core-workers
+  labels:
+    environment: stg
+    stage: stg
+    cost-center: cc-2000
+    managed-by: k8s-keda-poc

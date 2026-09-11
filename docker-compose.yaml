@@ -1,0 +1,76 @@
+services:
+  internal:
+    image: docker.io/rancher/k3s:v1.36.2-k3s1
+    container_name: k3s-internal
+    hostname: k3s-internal
+    privileged: true
+
+    command:
+      - server
+      - --node-name=internal
+      - --tls-san=localhost
+      - --tls-san=k3s-internal
+
+    ports:
+      - "6444:6443"
+
+    volumes:
+      - internal-data:/var/lib/rancher/k3s
+      - ./manifests/internal:/var/lib/rancher/k3s/server/manifests/custom:ro
+
+    networks:
+      - k8s-management
+
+  stg:
+    image: docker.io/rancher/k3s:v1.36.2-k3s1
+    container_name: k3s-stg
+    hostname: k3s-stg
+    privileged: true
+
+    command:
+      - server
+      - --node-name=stg
+      - --tls-san=localhost
+      - --tls-san=k3s-stg
+
+    ports:
+      - "6446:6443"
+
+    volumes:
+      - stg-data:/var/lib/rancher/k3s
+      - ./manifests/stg:/var/lib/rancher/k3s/server/manifests/custom:ro
+
+    networks:
+      - k8s-management
+
+  prod:
+    image: docker.io/rancher/k3s:v1.36.2-k3s1
+    container_name: k3s-prod
+    hostname: k3s-prod
+    privileged: true
+
+    command:
+      - server
+      - --node-name=prod
+      - --tls-san=localhost
+      - --tls-san=k3s-prod
+
+    ports:
+      - "6445:6443"
+      - "9000:9000"   # Argo CD UI, exposed by scripts/bootstrap-argocd.sh
+
+    volumes:
+      - prod-data:/var/lib/rancher/k3s
+      - ./manifests/prod:/var/lib/rancher/k3s/server/manifests/custom:ro
+
+    networks:
+      - k8s-management
+
+volumes:
+  internal-data:
+  stg-data:
+  prod-data:
+
+networks:
+  k8s-management:
+    driver: bridge

@@ -1,0 +1,49 @@
+# Deploys the single workload this repo runs (charts/core-workers) into
+# its namespace on each of the three clusters - same image everywhere,
+# differentiated only by the APP_ENV env var via values-<stage>.yaml. This
+# is the multi-cluster-from-one-Argo-CD piece: internal and stg target
+# registered remote clusters, prod targets the in-cluster address.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: core-workers-appset
+  namespace: chaos-prod
+spec:
+  generators:
+    - list:
+        elements:
+          - stage: internal
+            server: https://k3s-internal:6443
+          - stage: stg
+            server: https://k3s-stg:6443
+          - stage: prod
+            server: https://kubernetes.default.svc
+  template:
+    metadata:
+      # This Application name still needs the {{stage}} suffix even though
+      # the target namespace doesn't - all three Applications live
+      # together in chaos-prod, so their names have to be unique from each
+      # other, unlike the namespace they each deploy into on separate
+      # clusters.
+      name: 'core-workers-{{stage}}'
+      namespace: chaos-prod
+      labels:
+        stage: '{{stage}}'
+        environment: '{{stage}}'
+    spec:
+      project: core-workers
+      source:
+        repoURL: https://github.com/glexposito/k8s-keda-poc.git
+        targetRevision: HEAD
+        path: charts/core-workers
+        helm:
+          valueFiles:
+            - values.yaml
+            - 'values-{{stage}}.yaml'
+      destination:
+        server: '{{server}}'
+        namespace: 'core-workers'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

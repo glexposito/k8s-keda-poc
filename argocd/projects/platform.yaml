@@ -1,0 +1,39 @@
+# Platform-owned: namespace/quota/RBAC governance (manifests-internal,
+# manifests-stg, manifests-prod) - the layer with cluster-scoped access,
+# so it's kept separate from the core-workers project, which gets none at
+# all.
+#
+# sync-wave -1 so this (and the core-workers AppProject) get created
+# before clusters-appset.yaml / core-workers-appset.yaml try to generate
+# Applications that reference them - an Application referencing a project
+# that doesn't exist yet fails validation.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: chaos-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: >-
+    Namespace/quota/RBAC governance and the app-of-apps bootstrap itself.
+    Not for the workload itself - see the core-workers project.
+  sourceRepos:
+    - https://github.com/glexposito/k8s-keda-poc.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: '*'
+    - server: https://k3s-internal:6443
+      namespace: '*'
+    - server: https://k3s-stg:6443
+      namespace: '*'
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

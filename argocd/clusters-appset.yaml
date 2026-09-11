@@ -1,0 +1,39 @@
+# One Application per cluster, each syncing that cluster's manifests/
+# directory from this repo (namespaces, quotas, RBAC, network policies) -
+# the same content k3s's own auto-deploy mechanism applies today, now
+# managed via GitOps instead. This is the governance layer; the actual
+# workload is handled separately by core-workers-appset.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: clusters-appset
+  namespace: chaos-prod
+spec:
+  generators:
+    - list:
+        elements:
+          - cluster: internal
+            server: https://k3s-internal:6443
+          - cluster: stg
+            server: https://k3s-stg:6443
+          - cluster: prod
+            server: https://kubernetes.default.svc
+  template:
+    metadata:
+      name: 'manifests-{{cluster}}'
+      namespace: chaos-prod
+      labels:
+        environment: '{{cluster}}'
+        layer: governance
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/glexposito/k8s-keda-poc.git
+        targetRevision: HEAD
+        path: 'manifests/{{cluster}}'
+      destination:
+        server: '{{server}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: core-workers
+description: Helm chart for deploying core-workers - the single workload this repo deploys, same image everywhere, differentiated by env vars per environment
+type: application
+version: 0.1.0
+appVersion: "latest"
+dependencies:
+  - name: common
+    version: "0.1.0"
+    repository: "file://../common"

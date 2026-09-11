@@ -1,0 +1,15 @@
+# internal is the lowest-risk cluster: safe to break, catches issues
+# before anything reaches a customer-facing environment (see README
+# "Namespace design rationale"). One namespace per cluster now - there's
+# a single workload (core-workers), so the pillar axis this repo used to
+# have is gone; environment is the only boundary left that needs its own
+# quota/RBAC.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: core-workers
+  labels:
+    environment: internal
+    stage: internal
+    cost-center: cc-2000
+    managed-by: k8s-keda-poc

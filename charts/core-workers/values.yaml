@@ -1,0 +1,41 @@
+replicaCount: 50
+
+image:
+  repository: nginxdemos/hello
+  tag: "plain-text"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  containerPort: 80
+
+# Reported via the APP_ENV env var - every stage below sets this
+# explicitly so it's never silently left at the default.
+appEnvironment: production
+
+probes:
+  readiness:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  liveness:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 10
+
+rollingUpdate:
+  maxUnavailable: 0
+  maxSurge: 1
+
+# Sized per-worker, not per-deployment - deliberately light, since the
+# quota that actually caps this (manifests/<cluster>/01-policies.yaml) has
+# to hold 50 of these plus rollout headroom in even the smallest
+# environment (internal).
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
