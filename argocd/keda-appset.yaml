@@ -41,12 +41,27 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
-          # KEDA's scaledjobs.keda.sh CRD has a large enough OpenAPI
-          # schema that client-side apply's kubectl.kubernetes.io/
-          # last-applied-configuration annotation exceeds Kubernetes'
-          # 262144-byte annotation size limit - confirmed live via
-          # keda-prod's actual sync error ("metadata.annotations: Too
-          # long"). Server-side apply doesn't store that annotation at
-          # all, which is the documented fix for this exact class of
-          # large-CRD chart.
+          # KEDA's scaledjobs.keda.sh CRD is genuinely huge (~650KB as
+          # YAML - it embeds a full Kubernetes JobSpec/PodTemplateSpec
+          # schema alongside all the same trigger schema
+          # scaledobjects.keda.sh has). Client-side apply's
+          # kubectl.kubernetes.io/last-applied-configuration annotation
+          # blows past Kubernetes' 262144-byte annotation limit trying to
+          # embed that whole object - confirmed via keda-prod's actual
+          # sync error ("metadata.annotations: Too long").
           - ServerSideApply=true
+          # KNOWN LIMITATION, not fully resolved: even with
+          # ServerSideApply=true above, this Argo CD version (v3.5.2)
+          # still fails the exact same way applying scaledjobs.keda.sh
+          # specifically - confirmed live that plain `kubectl apply
+          # --server-side` outside Argo CD succeeds instantly on the
+          # identical manifest, so the CRD itself isn't the problem, Argo
+          # CD's own apply path is. Worked around by applying that one
+          # CRD directly with kubectl on all three clusters as a one-time
+          # manual step; keda-*'s Applications will likely show
+          # perpetual OutOfSync/retry-failed for just that one resource
+          # as a result. This doesn't affect functionality - this repo
+          # only ever creates ScaledObject resources (see
+          # charts/core-workers/templates/scaledobject.yaml), never
+          # ScaledJob, and scaledobjects.keda.sh installs and syncs
+          # cleanly on its own.

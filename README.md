@@ -78,7 +78,13 @@ docker compose up -d   # starts all three clusters, auto-applies manifests/inter
 everything else — installing Argo CD itself, and bridging a cross-cluster
 credential from `internal` and from `stg` into `prod`, both require reading
 live values generated at boot, not just dropping a static file in
-`manifests/`.
+`manifests/`. `bootstrap-keda.sh` is the equivalent prerequisite for
+KEDA-based autoscaling — teaching every cluster's CoreDNS how to resolve
+`azurite` (the local Azure Storage Queue emulator started by
+`docker-compose.yaml`) from inside a pod, the same cross-cluster DNS
+problem `bootstrap-argocd.sh` solves, solved the same way. Run it any
+time after `docker compose up -d`, independent of `bootstrap-argocd.sh`,
+in either order.
 
 The `argocd/` directory holds the app-of-apps bootstrap:
 
@@ -87,10 +93,18 @@ The `argocd/` directory holds the app-of-apps bootstrap:
 - `clusters-appset.yaml` — one `Application` per cluster, syncing
   `manifests/<cluster>/` (namespaces, quotas, RBAC, network policies) via
   GitOps instead of k3s's own auto-deploy mount.
+- `keda-appset.yaml` — installs KEDA (the operator + CRDs behind
+  `core-workers`' autoscaling) via its official Helm chart, once per
+  cluster, since it's a cluster-scoped operator, not something the
+  cluster running Argo CD can provide to the others.
 - `core-workers-appset.yaml` — one `ApplicationSet` with a matrix
   generator crossing every stage with every worker, deploying
   `charts/core-workers` (both `worker1` and `worker2`) into their shared
-  namespace on all three clusters — 6 Applications from one file.
+  namespace on all three clusters — 6 Applications from one file. Each
+  worker gets a KEDA `ScaledObject` scaling on `core-workers-queue`'s
+  depth, with different messages-per-replica ratios and ceilings per
+  environment: `internal` 1 per 50 (max 5), `stg` 1 per 25 (max 10),
+  `prod` 1 per 10 (max 20) — all scale to zero when the queue's empty.
 - `projects/platform.yaml`, `projects/core-workers.yaml` — `AppProject`s
   scoping what each Application is actually allowed to touch: `platform`
   (the governance layer above) can create cluster-scoped resources like
