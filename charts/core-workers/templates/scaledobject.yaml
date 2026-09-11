@@ -16,6 +16,11 @@ spec:
   maxReplicaCount: {{ .Values.scaling.maxReplicaCount }}
   pollingInterval: {{ .Values.scaling.pollingInterval }}
   cooldownPeriod: {{ .Values.scaling.cooldownPeriod }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.scaling.cooldownPeriod }}
   triggers:
     - type: azure-queue
       metadata:
