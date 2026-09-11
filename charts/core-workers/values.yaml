@@ -22,15 +22,22 @@ appEnvironment: production
 # this is the one thing that actually distinguishes worker1 from worker2.
 queueName: default-queue
 
-# KEDA scaling rule defaults - every stage below overrides these
-# explicitly, same as appEnvironment. minReplicaCount: 0 means scale to
-# zero when the queue's empty; queueLength is messages-per-replica (see
+# KEDA scaling rule defaults - every stage below overrides
+# minReplicaCount/maxReplicaCount/queueLength explicitly, same as
+# appEnvironment. minReplicaCount: 0 means scale to zero when the queue's
+# empty; queueLength is messages-per-replica (see
 # templates/scaledobject.yaml) - this default (1 replica per 5 messages)
 # only applies if a stage override is ever missing.
+#
+# pollingInterval/cooldownPeriod are intentionally not overridden
+# per-stage: they're PoC demo pacing (KEDA's defaults are 30s/300s,
+# too slow to watch live), not a risk-tier concern like the other three.
 scaling:
   minReplicaCount: 0
   maxReplicaCount: 1
   queueLength: 5
+  pollingInterval: 10
+  cooldownPeriod: 30
 
 # Azurite's fixed, publicly-documented local development account -
 # identical on every Azurite install everywhere, not a real secret. Pods

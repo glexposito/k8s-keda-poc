@@ -14,6 +14,8 @@ spec:
     name: {{ include "common.fullname" . }}
   minReplicaCount: {{ .Values.scaling.minReplicaCount }}
   maxReplicaCount: {{ .Values.scaling.maxReplicaCount }}
+  pollingInterval: {{ .Values.scaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.scaling.cooldownPeriod }}
   triggers:
     - type: azure-queue
       metadata:
