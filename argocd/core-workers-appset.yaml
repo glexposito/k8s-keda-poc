@@ -47,13 +47,15 @@ spec:
         helm:
           # releaseName drives the chart's common.fullname (Release.Name),
           # so this is what actually keeps worker1's and worker2's
-          # Deployment/Service names apart within the one shared
-          # namespace on each cluster - without it, Argo CD would default
-          # the release name to the Application name above, which
-          # (correctly) also carries {{stage}}, but that's redundant here
-          # since {{stage}} is already the namespace's cluster, not
-          # something the object name itself needs to repeat.
-          releaseName: 'core-workers-{{worker}}'
+          # Deployment/Service names apart within the one shared namespace
+          # on each cluster - without it, Argo CD would default the
+          # release name to the Application name above instead. No
+          # core-workers- prefix needed here (unlike the Application name
+          # below): Kubernetes uniqueness is (namespace, kind, name), and
+          # "worker1"/"worker2" are already unique within the core-workers
+          # namespace on their own - repeating the namespace's own name
+          # inside each object's name would just be redundant.
+          releaseName: '{{worker}}'
           valueFiles:
             - values.yaml
             - 'values-{{stage}}.yaml'
