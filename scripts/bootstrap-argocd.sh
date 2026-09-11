@@ -31,14 +31,19 @@ for cluster in "${REMOTE_CLUSTERS[@]}"; do
 done
 
 step "Teaching prod's CoreDNS how to resolve each remote cluster..."
-# --server-side --field-manager (rather than plain client-side apply) so
-# scripts/bootstrap-keda.sh can later add its own "azurite.override" key
-# to this same coredns-custom ConfigMap without wiping the keys this
-# script owns - plain `apply` does a client-side 3-way merge against the
-# last-applied-configuration annotation, and would interpret a key it
-# didn't write as "removed" the next time a different script's partial
-# manifest gets applied. Server-side apply tracks ownership per key
-# instead, so each script's own entries survive the other's applies.
+# Uses `kubectl patch --type merge` (JSON Merge Patch, RFC 7386) instead
+# of `apply`, so scripts/bootstrap-keda.sh can later add its own
+# "azurite.override" key to this same coredns-custom ConfigMap without
+# wiping the keys this script owns. Plain `apply` (client-side OR
+# --server-side) was tried first and both got this wrong: client-side
+# apply's 3-way merge treats a key missing from the new manifest as
+# "removed", and ConfigMap.data turned out to be an atomic map for
+# server-side apply purposes too - a partial server-side apply replaced
+# the *whole* map rather than merging by key, confirmed by watching
+# bootstrap-keda.sh's apply silently delete this script's entries. JSON
+# Merge Patch is the one operation that's actually guaranteed to merge
+# nested map keys instead of replacing the map wholesale, independent of
+# how the object was created or which manager touched it last.
 # docker-compose's DNS (which resolves container names like "k3s-internal")
 # only works from the k3s-prod container's own network namespace, not from
 # inside a pod's separate network namespace - so prod's CoreDNS can't
@@ -65,12 +70,9 @@ for cluster in "${REMOTE_CLUSTERS[@]}"; do
     }
 "
 done
-docker exec -i k3s-prod kubectl apply --server-side --field-manager=bootstrap-argocd -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns-custom
-  namespace: kube-system
+docker exec k3s-prod kubectl get configmap coredns-custom -n kube-system >/dev/null 2>&1 || \
+  docker exec k3s-prod kubectl create configmap coredns-custom -n kube-system
+docker exec -i k3s-prod kubectl patch configmap coredns-custom -n kube-system --type merge --patch-file=/dev/stdin <<EOF
 data:
 $COREDNS_DATA
 EOF

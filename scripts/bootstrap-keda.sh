@@ -23,18 +23,17 @@ AZURITE_IP=$(docker inspect azurite --format '{{range .NetworkSettings.Networks}
 
 step "Teaching every cluster's CoreDNS how to resolve azurite..."
 for cluster in "${ALL_CLUSTERS[@]}"; do
-  # --server-side --field-manager=bootstrap-keda: this ConfigMap is
-  # shared with bootstrap-argocd.sh on the prod cluster (which owns
-  # internal.override/stg.override there) - server-side apply tracks
-  # ownership per data key, so this script's own key survives regardless
-  # of which script ran first or how many times either re-runs. See the
+  # `kubectl patch --type merge` (JSON Merge Patch), not `apply` - this
+  # ConfigMap is shared with bootstrap-argocd.sh on the prod cluster
+  # (which owns internal.override/stg.override there), and a plain
+  # `apply` of a partial manifest - client-side OR --server-side - was
+  # confirmed to replace the *whole* data map rather than merge it by
+  # key, silently deleting the other script's entries. JSON Merge Patch
+  # is what actually merges by key regardless of prior history. See the
   # matching comment in bootstrap-argocd.sh.
-  docker exec -i "k3s-$cluster" kubectl apply --server-side --field-manager=bootstrap-keda -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coredns-custom
-  namespace: kube-system
+  docker exec "k3s-$cluster" kubectl get configmap coredns-custom -n kube-system >/dev/null 2>&1 || \
+    docker exec "k3s-$cluster" kubectl create configmap coredns-custom -n kube-system
+  docker exec -i "k3s-$cluster" kubectl patch configmap coredns-custom -n kube-system --type merge --patch-file=/dev/stdin <<EOF
 data:
   azurite.override: |
     template IN A {
