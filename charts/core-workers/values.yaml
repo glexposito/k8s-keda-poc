@@ -35,8 +35,8 @@ scaling:
 # Azurite's fixed, publicly-documented local development account -
 # identical on every Azurite install everywhere, not a real secret. Pods
 # resolve "azurite" via each cluster's CoreDNS override
-# (scripts/bootstrap-keda.sh) - same cross-cluster DNS problem
-# bootstrap-argocd.sh solves for k3s hostnames, same fix.
+# (manifests/<cluster>/05-azurite-dns.yaml) - static YAML, not a
+# bootstrap script, since azurite has a fixed IP in docker-compose.yaml.
 azuriteConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
 
 probes:

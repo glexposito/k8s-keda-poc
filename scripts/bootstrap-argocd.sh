@@ -32,18 +32,21 @@ done
 
 step "Teaching prod's CoreDNS how to resolve each remote cluster..."
 # Uses `kubectl patch --type merge` (JSON Merge Patch, RFC 7386) instead
-# of `apply`, so scripts/bootstrap-keda.sh can later add its own
-# "azurite.override" key to this same coredns-custom ConfigMap without
-# wiping the keys this script owns. Plain `apply` (client-side OR
-# --server-side) was tried first and both got this wrong: client-side
-# apply's 3-way merge treats a key missing from the new manifest as
-# "removed", and ConfigMap.data turned out to be an atomic map for
-# server-side apply purposes too - a partial server-side apply replaced
-# the *whole* map rather than merging by key, confirmed by watching
-# bootstrap-keda.sh's apply silently delete this script's entries. JSON
-# Merge Patch is the one operation that's actually guaranteed to merge
-# nested map keys instead of replacing the map wholesale, independent of
-# how the object was created or which manager touched it last.
+# of `apply`, so this doesn't wipe the "azurite.override" key that
+# manifests/prod/05-azurite-dns.yaml auto-applies (via k3s at boot) or
+# Argo CD (via clusters-appset.yaml) writes to this same coredns-custom
+# ConfigMap. Plain `apply` (client-side OR --server-side) was tried first
+# and both got this wrong when tested against a second, independent
+# writer of a different key on the same object: client-side apply's
+# 3-way merge treats a key missing from the new manifest as "removed"
+# once it's been through one apply cycle, and ConfigMap.data turned out
+# to be an atomic map for server-side apply purposes too - a partial
+# server-side apply replaced the *whole* map rather than merging by key,
+# confirmed live by watching one apply silently delete another's entries.
+# JSON Merge Patch is the one operation that's actually guaranteed to
+# merge nested map keys instead of replacing the map wholesale,
+# independent of how the object was created or which manager touched it
+# last.
 # docker-compose's DNS (which resolves container names like "k3s-internal")
 # only works from the k3s-prod container's own network namespace, not from
 # inside a pod's separate network namespace - so prod's CoreDNS can't

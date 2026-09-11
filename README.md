@@ -78,13 +78,16 @@ docker compose up -d   # starts all three clusters, auto-applies manifests/inter
 everything else — installing Argo CD itself, and bridging a cross-cluster
 credential from `internal` and from `stg` into `prod`, both require reading
 live values generated at boot, not just dropping a static file in
-`manifests/`. `bootstrap-keda.sh` is the equivalent prerequisite for
-KEDA-based autoscaling — teaching every cluster's CoreDNS how to resolve
-`azurite` (the local Azure Storage Queue emulator started by
-`docker-compose.yaml`) from inside a pod, the same cross-cluster DNS
-problem `bootstrap-argocd.sh` solves, solved the same way. Run it any
-time after `docker compose up -d`, independent of `bootstrap-argocd.sh`,
-in either order.
+`manifests/`. KEDA-based autoscaling doesn't need an equivalent script:
+pods need to resolve `azurite` (the local Azure Storage Queue emulator
+started by `docker-compose.yaml`) by name, which sounds like the same
+cross-cluster DNS problem `bootstrap-argocd.sh` solves for `k3s-internal`/
+`k3s-stg` - but azurite has a fixed IP
+(`docker-compose.yaml`'s `k8s-management` network has a defined subnet
+specifically so it can get one), so the CoreDNS override is a known,
+constant value instead of something that has to be discovered at runtime.
+It's just static YAML, `manifests/<cluster>/05-azurite-dns.yaml`, applied
+the same way as everything else.
 
 The `argocd/` directory holds the app-of-apps bootstrap:
 

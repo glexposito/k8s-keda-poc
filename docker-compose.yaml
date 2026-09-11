@@ -88,7 +88,12 @@ services:
       - azurite-data:/data
 
     networks:
-      - k8s-management
+      k8s-management:
+        # Fixed, not Docker-assigned - this is what lets every cluster's
+        # CoreDNS override for "azurite" (manifests/<cluster>/05-azurite-dns.yaml)
+        # be a static, git-committed value instead of something a
+        # bootstrap script has to discover at runtime via `docker inspect`.
+        ipv4_address: 172.28.0.100
 
   # One-shot: creates core-workers-queue and seeds it with 100 messages,
   # so there's something for a future KEDA ScaledObject to scale on. Only
@@ -136,3 +141,10 @@ volumes:
 networks:
   k8s-management:
     driver: bridge
+    # A defined subnet is required to assign azurite a static IP above -
+    # Docker won't let you pin an address on a network with no IPAM
+    # config. Every other container on this network still gets a
+    # Docker-assigned address as before.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
