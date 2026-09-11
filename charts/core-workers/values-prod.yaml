@@ -1,2 +1,9 @@
-replicaCount: 5
+replicaCount: 0
 appEnvironment: production
+
+# 1 replica per 10 messages, most responsive and highest ceiling of any
+# environment - prod carries full production traffic.
+scaling:
+  minReplicaCount: 0
+  maxReplicaCount: 20
+  queueLength: 10

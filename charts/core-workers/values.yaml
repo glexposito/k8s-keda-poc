@@ -1,6 +1,7 @@
-# Generic single-instance default - every stage below overrides this
-# explicitly, same as appEnvironment.
-replicaCount: 1
+# Initial/fallback replica count before KEDA's HPA takes over (see
+# templates/scaledobject.yaml) - every stage below overrides this to 0,
+# matching their scaling.minReplicaCount.
+replicaCount: 0
 
 image:
   repository: nginxdemos/hello
@@ -21,6 +22,23 @@ appEnvironment: production
 # this is the one thing that actually distinguishes worker1 from worker2.
 queueName: default-queue
 
+# KEDA scaling rule defaults - every stage below overrides these
+# explicitly, same as appEnvironment. minReplicaCount: 0 means scale to
+# zero when the queue's empty; queueLength is messages-per-replica (see
+# templates/scaledobject.yaml) - this default (1 replica per 5 messages)
+# only applies if a stage override is ever missing.
+scaling:
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  queueLength: 5
+
+# Azurite's fixed, publicly-documented local development account -
+# identical on every Azurite install everywhere, not a real secret. Pods
+# resolve "azurite" via each cluster's CoreDNS override
+# (scripts/bootstrap-keda.sh) - same cross-cluster DNS problem
+# bootstrap-argocd.sh solves for k3s hostnames, same fix.
+azuriteConnectionString: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
+
 probes:
   readiness:
     path: /
@@ -37,8 +55,8 @@ rollingUpdate:
 
 # Sized per-worker, not per-deployment - deliberately light, since the
 # quota that actually caps this (manifests/<cluster>/01-policies.yaml)
-# has to hold this many of these, per environment's replicaCount below,
-# plus rollout/scaling headroom.
+# has to hold up to scaling.maxReplicaCount of these, per worker, per
+# environment.
 resources:
   requests:
     cpu: 50m

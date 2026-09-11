@@ -2,9 +2,11 @@
 # image) into their shared namespace on each of the three clusters - a
 # matrix generator crosses every stage with every worker, so this stays
 # one appset regardless of how many workers or environments exist.
-# worker1/worker2 differ only by values-<worker>.yaml (QUEUE_NAME today,
-# KEDA scaling rules once that's added) layered on top of
-# values-<stage>.yaml (APP_ENV) on top of values.yaml (shared defaults).
+# worker1/worker2 differ only by values-<worker>.yaml (QUEUE_NAME) layered
+# on top of values-<stage>.yaml (APP_ENV plus the KEDA scaling.* rules -
+# messages-per-replica and the min/max ceiling differ per environment, not
+# per worker) on top of values.yaml (shared defaults). Requires KEDA
+# already installed on each cluster - see argocd/keda-appset.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -63,6 +65,16 @@ spec:
       destination:
         server: '{{server}}'
         namespace: 'core-workers'
+      # Without this, selfHeal would reset spec.replicas back to
+      # values.yaml's static replicaCount on every sync, fighting the HPA
+      # that templates/scaledobject.yaml's ScaledObject creates - Argo CD
+      # would "correct" KEDA's scaling decision away every time it
+      # reconciles.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas
       syncPolicy:
         automated:
           prune: true

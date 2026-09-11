@@ -31,6 +31,14 @@ for cluster in "${REMOTE_CLUSTERS[@]}"; do
 done
 
 step "Teaching prod's CoreDNS how to resolve each remote cluster..."
+# --server-side --field-manager (rather than plain client-side apply) so
+# scripts/bootstrap-keda.sh can later add its own "azurite.override" key
+# to this same coredns-custom ConfigMap without wiping the keys this
+# script owns - plain `apply` does a client-side 3-way merge against the
+# last-applied-configuration annotation, and would interpret a key it
+# didn't write as "removed" the next time a different script's partial
+# manifest gets applied. Server-side apply tracks ownership per key
+# instead, so each script's own entries survive the other's applies.
 # docker-compose's DNS (which resolves container names like "k3s-internal")
 # only works from the k3s-prod container's own network namespace, not from
 # inside a pod's separate network namespace - so prod's CoreDNS can't
@@ -57,7 +65,7 @@ for cluster in "${REMOTE_CLUSTERS[@]}"; do
     }
 "
 done
-docker exec -i k3s-prod kubectl apply -f - <<EOF
+docker exec -i k3s-prod kubectl apply --server-side --field-manager=bootstrap-argocd -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:

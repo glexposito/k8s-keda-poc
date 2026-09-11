@@ -1,11 +1,12 @@
 # Per-namespace governance: caps resource usage and isolates namespaces
 # from each other at the network layer. k3s enables its kube-router
 # network policy controller by default, so these NetworkPolicies are
-# actually enforced (not just descriptive). Both worker1 and worker2 run
-# replicaCount: 1 here (see charts/core-workers/values-internal.yaml), so
-# 2 pods is the actual floor - this quota is generous headroom above
-# that, not a tight fit - the smallest tier of any cluster, since
-# internal is the lowest-risk environment.
+# actually enforced (not just descriptive). KEDA scales both worker1 and
+# worker2 between 0 and maxReplicaCount: 5 here (see
+# charts/core-workers/values-internal.yaml), so 10 pods (both workers at
+# their ceiling at once) is the real worst case - this quota covers that
+# plus rollout headroom - the smallest tier of any cluster, since internal
+# is the lowest-risk environment.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -17,7 +18,7 @@ spec:
     requests.memory: 1Gi
     limits.cpu: "2"
     limits.memory: 2Gi
-    pods: "10"
+    pods: "12"
 ---
 apiVersion: v1
 kind: LimitRange

@@ -20,6 +20,10 @@ spec:
     Not for the workload itself - see the core-workers project.
   sourceRepos:
     - https://github.com/glexposito/k8s-keda-poc.git
+    # KEDA's Helm chart (argocd/keda-appset.yaml) - a Helm repo, not git,
+    # since we're installing KEDA's own published chart rather than
+    # vendoring it into this repo.
+    - https://kedacore.github.io/charts
   destinations:
     - server: https://kubernetes.default.svc
       namespace: '*'
@@ -34,6 +38,14 @@ spec:
       kind: ClusterRole
     - group: rbac.authorization.k8s.io
       kind: ClusterRoleBinding
+    # Both needed by KEDA's Helm chart: CRDs for ScaledObject/
+    # TriggerAuthentication/etc., and an APIService registering KEDA's
+    # metrics adapter under external.metrics.k8s.io so the HPA that
+    # backs each ScaledObject can query it.
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: apiregistration.k8s.io
+      kind: APIService
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'

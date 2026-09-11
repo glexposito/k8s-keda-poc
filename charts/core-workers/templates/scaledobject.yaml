@@ -1,0 +1,23 @@
+# Requires KEDA's CRDs to already exist on this cluster (argocd/keda-appset.yaml).
+# If that Application hasn't synced yet the first time everything bootstraps
+# together, this Application will fail until it does - Argo CD's own
+# auto-sync retries pick it up once the CRD lands, no manual ordering
+# needed between the two ApplicationSets.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "common.fullname" . }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "common.fullname" . }}
+  minReplicaCount: {{ .Values.scaling.minReplicaCount }}
+  maxReplicaCount: {{ .Values.scaling.maxReplicaCount }}
+  triggers:
+    - type: azure-queue
+      metadata:
+        queueName: {{ .Values.queueName | quote }}
+        queueLength: {{ .Values.scaling.queueLength | quote }}
+        accountName: devstoreaccount1
+        connectionFromEnv: AZURE_STORAGE_CONNECTION_STRING

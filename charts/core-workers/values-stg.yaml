@@ -1,2 +1,8 @@
-replicaCount: 2
+replicaCount: 0
 appEnvironment: stg
+
+# 1 replica per 25 messages, more responsive than internal, less than prod.
+scaling:
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  queueLength: 25

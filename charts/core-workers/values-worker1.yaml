@@ -1,4 +1,5 @@
-# Scaling rule fields (min/max replicas, trigger thresholds, etc.) belong
-# here too once KEDA is added - this is the file that varies per worker,
-# independent of which environment it's deployed to.
-queueName: worker1-queue
+# Both workers read the same shared queue - neither actually processes
+# messages yet (this repo is a scaling demo, not a real consumer), so
+# there's no reason to split it into worker1-queue/worker2-queue. Revisit
+# if these ever become real, independent consumers.
+queueName: core-workers-queue

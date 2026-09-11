@@ -5,6 +5,11 @@ metadata:
   labels:
     {{- include "common.labels" . | nindent 4 }}
 spec:
+  # This is only the initial/fallback value - once the ScaledObject
+  # (templates/scaledobject.yaml) is synced, KEDA's HPA owns this field.
+  # argocd/core-workers-appset.yaml's ignoreDifferences on spec/replicas
+  # is what stops Argo CD fighting the HPA back to this fixed number on
+  # every sync.
   replicas: {{ .Values.replicaCount }}
   strategy:
     type: RollingUpdate
@@ -32,6 +37,15 @@ spec:
               value: {{ .Values.appEnvironment | quote }}
             - name: QUEUE_NAME
               value: {{ .Values.queueName | quote }}
+            # Read by KEDA's azure-queue scaler too (scaledobject.yaml's
+            # connectionFromEnv) - KEDA resolves this env var directly off
+            # this Deployment's own pod spec, so the ScaledObject doesn't
+            # need its own separate credential lookup.
+            - name: AZURE_STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "common.fullname" . }}-azurite-connection
+                  key: connectionString
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:
