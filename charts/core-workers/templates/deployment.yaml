@@ -30,6 +30,8 @@ spec:
           env:
             - name: APP_ENV
               value: {{ .Values.appEnvironment | quote }}
+            - name: QUEUE_NAME
+              value: {{ .Values.queueName | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           readinessProbe:

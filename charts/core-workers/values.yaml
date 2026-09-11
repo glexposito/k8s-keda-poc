@@ -16,6 +16,11 @@ service:
 # explicitly so it's never silently left at the default.
 appEnvironment: production
 
+# Reported via the QUEUE_NAME env var - every worker below sets this
+# explicitly, same as appEnvironment. Same image, same everything else -
+# this is the one thing that actually distinguishes worker1 from worker2.
+queueName: default-queue
+
 probes:
   readiness:
     path: /

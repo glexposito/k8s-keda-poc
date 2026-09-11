@@ -1,11 +1,11 @@
 # Per-namespace governance: caps resource usage and isolates namespaces
 # from each other at the network layer. k3s enables its kube-router
 # network policy controller by default, so these NetworkPolicies are
-# actually enforced (not just descriptive). internal runs
-# replicaCount: 1 (see charts/core-workers/values-internal.yaml), so this
-# quota is generous headroom above that floor, not a tight fit - the
-# smallest tier of any cluster, since internal is the lowest-risk
-# environment.
+# actually enforced (not just descriptive). Both worker1 and worker2 run
+# replicaCount: 1 here (see charts/core-workers/values-internal.yaml), so
+# 2 pods is the actual floor - this quota is generous headroom above
+# that, not a tight fit - the smallest tier of any cluster, since
+# internal is the lowest-risk environment.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

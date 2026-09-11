@@ -1,8 +1,10 @@
-# Deploys the single workload this repo runs (charts/core-workers) into
-# its namespace on each of the three clusters - same image everywhere,
-# differentiated only by the APP_ENV env var via values-<stage>.yaml. This
-# is the multi-cluster-from-one-Argo-CD piece: internal and stg target
-# registered remote clusters, prod targets the in-cluster address.
+# Deploys both core-worker variants (charts/core-workers, same chart, same
+# image) into their shared namespace on each of the three clusters - a
+# matrix generator crosses every stage with every worker, so this stays
+# one appset regardless of how many workers or environments exist.
+# worker1/worker2 differ only by values-<worker>.yaml (QUEUE_NAME today,
+# KEDA scaling rules once that's added) layered on top of
+# values-<stage>.yaml (APP_ENV) on top of values.yaml (shared defaults).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -10,26 +12,32 @@ metadata:
   namespace: chaos-prod
 spec:
   generators:
-    - list:
-        elements:
-          - stage: internal
-            server: https://k3s-internal:6443
-          - stage: stg
-            server: https://k3s-stg:6443
-          - stage: prod
-            server: https://kubernetes.default.svc
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - stage: internal
+                  server: https://k3s-internal:6443
+                - stage: stg
+                  server: https://k3s-stg:6443
+                - stage: prod
+                  server: https://kubernetes.default.svc
+          - list:
+              elements:
+                - worker: worker1
+                - worker: worker2
   template:
     metadata:
-      # This Application name still needs the {{stage}} suffix even though
-      # the target namespace doesn't - all three Applications live
-      # together in chaos-prod, so their names have to be unique from each
-      # other, unlike the namespace they each deploy into on separate
-      # clusters.
-      name: 'core-workers-{{stage}}'
+      # The Application name needs both {{worker}} and {{stage}} - all six
+      # Applications live together in chaos-prod, so their names have to
+      # be unique from each other, unlike the shared namespace they each
+      # deploy into on separate clusters.
+      name: 'core-workers-{{worker}}-{{stage}}'
       namespace: chaos-prod
       labels:
         stage: '{{stage}}'
         environment: '{{stage}}'
+        worker: '{{worker}}'
     spec:
       project: core-workers
       source:
@@ -37,9 +45,19 @@ spec:
         targetRevision: HEAD
         path: charts/core-workers
         helm:
+          # releaseName drives the chart's common.fullname (Release.Name),
+          # so this is what actually keeps worker1's and worker2's
+          # Deployment/Service names apart within the one shared
+          # namespace on each cluster - without it, Argo CD would default
+          # the release name to the Application name above, which
+          # (correctly) also carries {{stage}}, but that's redundant here
+          # since {{stage}} is already the namespace's cluster, not
+          # something the object name itself needs to repeat.
+          releaseName: 'core-workers-{{worker}}'
           valueFiles:
             - values.yaml
             - 'values-{{stage}}.yaml'
+            - 'values-{{worker}}.yaml'
       destination:
         server: '{{server}}'
         namespace: 'core-workers'

@@ -1,0 +1,4 @@
+# Scaling rule fields (min/max replicas, trigger thresholds, etc.) belong
+# here too once KEDA is added - this is the file that varies per worker,
+# independent of which environment it's deployed to.
+queueName: worker1-queue

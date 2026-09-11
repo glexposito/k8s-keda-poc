@@ -1,11 +1,12 @@
 # Per-namespace governance: caps resource usage and isolates namespaces
 # from each other at the network layer. k3s enables its kube-router
 # network policy controller by default, so these NetworkPolicies are
-# actually enforced (not just descriptive). prod runs replicaCount: 5 (see
-# charts/core-workers/values-prod.yaml) - the largest tier of any cluster,
-# since it carries full production traffic, with the most headroom above
-# its floor for future scale-up. chaos-prod's quota is unrelated to
-# core-workers - it's sized to comfortably hold Argo CD's own components.
+# actually enforced (not just descriptive). Both worker1 and worker2 run
+# replicaCount: 5 here (see charts/core-workers/values-prod.yaml), so 10
+# pods is the actual floor - the largest tier of any cluster, since it
+# carries full production traffic, with the most headroom above its floor
+# for future scale-up. chaos-prod's quota is unrelated to core-workers -
+# it's sized to comfortably hold Argo CD's own components.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

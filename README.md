@@ -21,8 +21,9 @@ alongside ours), and k3s auto-applies everything under `server/manifests`
 recursively — `docker compose up -d` alone is enough to get a fully-seeded
 cluster, no separate apply step needed.
 
-This repo deploys a single workload, `core-workers` — same image on every
-cluster, differentiated only by env vars — into a namespace called
+This repo deploys two worker variants, `worker1` and `worker2` — same
+chart, same image, same everything except the `QUEUE_NAME` env var (and,
+once KEDA is added, their scaling rules) — both into a namespace called
 `core-workers` on each cluster. The namespace name doesn't carry a stage
 suffix: each cluster is already dedicated to one environment (silo model,
 see "Namespace design rationale" below), so the cluster boundary is what
@@ -51,9 +52,10 @@ Every cluster's `core-workers` namespace also has its own `ResourceQuota`, a
 `LimitRange`, and a default-deny-except-same-namespace `NetworkPolicy` —
 defined per cluster in `manifests/<cluster>/01-policies.yaml`, so the exact
 same namespace name can carry a completely different quota on each cluster
-(they're separate API servers; nothing links them by name). `core-workers`
-runs a different `replicaCount` per environment (`internal`: 1, `stg`: 2,
-`prod`: 5), and quotas are sized to hold each floor plus headroom for
+(they're separate API servers; nothing links them by name). Each worker
+runs the same `replicaCount` per environment (`internal`: 1, `stg`: 2,
+`prod`: 5), so the actual pod floor per cluster is double that (both
+workers combined) — quotas are sized to hold that floor plus headroom for
 future scale-up, graduated by environment: `internal` is smallest, `stg`
 is mid-sized, `prod` is largest.
 
@@ -85,8 +87,10 @@ The `argocd/` directory holds the app-of-apps bootstrap:
 - `clusters-appset.yaml` — one `Application` per cluster, syncing
   `manifests/<cluster>/` (namespaces, quotas, RBAC, network policies) via
   GitOps instead of k3s's own auto-deploy mount.
-- `core-workers-appset.yaml` — one `ApplicationSet` deploying
-  `charts/core-workers` into its namespace on all three clusters.
+- `core-workers-appset.yaml` — one `ApplicationSet` with a matrix
+  generator crossing every stage with every worker, deploying
+  `charts/core-workers` (both `worker1` and `worker2`) into their shared
+  namespace on all three clusters — 6 Applications from one file.
 - `projects/platform.yaml`, `projects/core-workers.yaml` — `AppProject`s
   scoping what each Application is actually allowed to touch: `platform`
   (the governance layer above) can create cluster-scoped resources like
@@ -98,11 +102,13 @@ All of these reference this repo's real remote
 sync as-is once Argo CD is running.
 
 `charts/core-workers` is a small, generic Helm chart (not tied to any real
-app or company) — one `values.yaml` with shared defaults (including a
-generic `replicaCount: 1`) plus `values-internal.yaml`/`values-stg.yaml`/
-`values-prod.yaml` overrides that set both `replicaCount` (1/2/5) and the
-`APP_ENV` env var per environment. `charts/common` holds shared name/label
-helpers used by the chart.
+app or company) — one `values.yaml` with shared defaults, plus two
+independent axes of overrides layered on top by the appset:
+`values-internal.yaml`/`values-stg.yaml`/`values-prod.yaml` (environment:
+`replicaCount` and `APP_ENV`) and `values-worker1.yaml`/
+`values-worker2.yaml` (worker identity: `QUEUE_NAME` today, scaling rules
+once KEDA is added). `charts/common` holds shared name/label helpers used
+by the chart.
 
 Then explore (pick the container for the cluster you want: `k3s-internal`,
 `k3s-stg`, or `k3s-prod`):
