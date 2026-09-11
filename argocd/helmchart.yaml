@@ -26,3 +26,17 @@ spec:
         limits:
           cpu: 750m
           memory: 1024Mi
+    # PoC-only: fixed admin/123 login and a NodePort so the UI is reachable
+    # the moment this Helm install finishes - no kubectl port-forward
+    # process, no script, nothing to run by hand. Weak on purpose; this
+    # never leaves localhost (see docker-compose.yaml's prod port mapping).
+    # Hash generated with:
+    #   docker run --rm httpd:2.4-alpine htpasswd -nbBC 10 "" 123 | tr -d ':\n'
+    configs:
+      secret:
+        argocdServerAdminPassword: "$2a$10$zG/yvDMqlg9VStNvqCftBe3UVYc53FK5Gh47BWpeMuBl4vYQf3ini"
+        argocdServerAdminPasswordMtime: "2024-01-01T00:00:00Z"
+    server:
+      service:
+        type: NodePort
+        nodePortHttps: 30090

@@ -79,7 +79,9 @@ services:
 
     ports:
       - "6445:6443"
-      - "9000:9000"   # Argo CD UI, exposed by scripts/argocd-ui.sh
+      # Argo CD UI - argocd/helmchart.yaml sets server.service.type=NodePort
+      # on 30090, so this is reachable directly, no kubectl port-forward.
+      - "9000:30090"
 
     volumes:
       - prod-data:/var/lib/rancher/k3s
@@ -191,7 +193,7 @@ services:
 
         echo "Applying the root Application..."
         prod apply -n argocd -f /argocd/root-app.yaml
-        echo "Managed clusters: prod, internal, stg. Open the UI with ./scripts/argocd-ui.sh"
+        echo "Managed clusters: prod, internal, stg. Argo CD UI: https://localhost:9000 (admin/123)"
 
     networks:
       - k8s-management

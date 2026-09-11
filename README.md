@@ -75,8 +75,10 @@ instead of setting up a local kubeconfig.
 ```bash
 docker compose up -d             # starts clusters and Azurite; K3s installs Argo CD;
                                   # argocd-bootstrap registers clusters and applies the root Application
-./scripts/argocd-ui.sh           # opens https://localhost:9000; keep this terminal open
 ```
+
+That's the whole workflow - open https://localhost:9000 (`admin` / `123`) once
+Argo CD is up. Nothing else to run.
 
 Argo CD installation is managed by K3s's built-in Helm controller. The
 `HelmChart` pins chart `10.8.4` (Argo CD `v3.5.2`) and declares the application
@@ -99,10 +101,12 @@ azurite all get fixed IPs in `docker-compose.yaml`, so prod's CoreDNS override
 (`manifests/prod/05-cluster-dns.yaml`) is static, git-committed YAML too -
 nothing is discovered at runtime.
 
-UI access is independent. Run `./scripts/argocd-ui.sh --password` in another
-terminal to retrieve the initial `admin` password. Stop forwarding with Ctrl+C;
-restart the helper whenever you need the UI. If another forward already owns
-port 9000, use it or stop it before starting a new one.
+UI access needs no script or `kubectl port-forward`: `argocd/helmchart.yaml`
+sets `server.service.type: NodePort` on `30090`, mapped to host port 9000 in
+`docker-compose.yaml`, and pins the `admin` password to `123` via
+`configs.secret.argocdServerAdminPassword` (a bcrypt hash committed in that
+file) - fine for a throwaway local PoC that never leaves `localhost`, not a
+pattern to copy for anything real.
 
 For a fresh install, inspect the Helm job if Argo CD does not become ready:
 
