@@ -66,10 +66,72 @@ services:
     networks:
       - k8s-management
 
+  # Local Azure Storage Queue emulator - there's no real Azure account
+  # here, Azurite is Microsoft's official emulator and speaks the same
+  # Queue Storage API. Queue-only (azurite-queue), since blob/table aren't
+  # used by this repo.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: azurite
+    hostname: azurite
+
+    command:
+      - azurite-queue
+      - --queueHost=0.0.0.0
+      - --queuePort=10001
+      - --location=/data
+
+    ports:
+      - "10001:10001"
+
+    volumes:
+      - azurite-data:/data
+
+    networks:
+      - k8s-management
+
+  # One-shot: creates core-workers-queue and seeds it with 100 messages,
+  # so there's something for a future KEDA ScaledObject to scale on. Only
+  # seeds on first creation (checks the `created` field from `queue
+  # create`) - azurite-data persists across `docker compose up -d`
+  # restarts, so without that check this would keep appending 100 more
+  # messages every time the stack comes back up.
+  queue-seed:
+    image: mcr.microsoft.com/azure-cli:latest
+    container_name: queue-seed
+    depends_on:
+      - azurite
+
+    environment:
+      # Azurite's fixed, publicly-documented local development account -
+      # identical on every Azurite install everywhere, not a real secret.
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;QueueEndpoint=http://azurite:10001/devstoreaccount1;"
+
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Waiting for azurite..."
+        until az storage queue exists --name core-workers-queue -o none 2>/dev/null; do sleep 1; done
+        CREATED=$$(az storage queue create --name core-workers-queue --query created -o tsv)
+        if [ "$$CREATED" = "true" ]; then
+          echo "Seeding 100 messages into core-workers-queue..."
+          for i in $$(seq 1 100); do
+            az storage message put --queue-name core-workers-queue --content "message-$$i" -o none
+          done
+          echo "Done."
+        else
+          echo "core-workers-queue already exists - skipping seed."
+        fi
+
+    networks:
+      - k8s-management
+
 volumes:
   internal-data:
   stg-data:
   prod-data:
+  azurite-data:
 
 networks:
   k8s-management:
