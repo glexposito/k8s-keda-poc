@@ -1,0 +1,5 @@
+# Both workers read the same shared queue - neither actually processes
+# messages yet (this repo is a scaling demo, not a real consumer), so
+# there's no reason to split it into worker1-queue/worker2-queue. Revisit
+# if these ever become real, independent consumers.
+queueName: core-workers-queue

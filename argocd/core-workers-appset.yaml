@@ -28,6 +28,14 @@ spec:
               elements:
                 - worker: worker1
                 - worker: worker2
+                - worker: worker3
+                - worker: worker4
+                - worker: worker5
+                - worker: worker6
+                - worker: worker7
+                - worker: worker8
+                - worker: worker9
+                - worker: worker10
   template:
     metadata:
       # The Application name needs both {{worker}} and {{stage}} - all six
