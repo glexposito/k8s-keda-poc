@@ -1,0 +1,14 @@
+# management is a dedicated platform cluster: it runs only Argo CD, no
+# workload tenants - not a promotion stage, so it carries no
+# environment=internal/stg/prod label of its own. `argocd` is a fixed
+# platform namespace, installed here by the K3s HelmChart in
+# argocd/helmchart.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    environment: management
+    stage: management
+    cost-center: cc-1000
+    managed-by: k8s-keda-poc

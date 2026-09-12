@@ -1,10 +1,11 @@
 # k8s-keda-poc
 
 A tiny, throwaway PoC showing how to autoscale workers with KEDA, deployed
-via GitOps from a single Argo CD instance managing three k3s clusters
-(internal/stg/prod) — along with the namespace layout, labels, and
-per-namespace guardrails each cluster gets along the way. Anyone can clone
-this and spin up all three locally to poke around.
+via GitOps from a single Argo CD instance managing three workload clusters
+(internal/stg/prod) from its own dedicated management cluster — along with
+the namespace layout, labels, and per-namespace guardrails each workload
+cluster gets along the way. Anyone can clone this and spin up all four
+locally to poke around.
 
 ## Design philosophy
 
@@ -12,22 +13,30 @@ KISS — keep it simple, stupid!
 
 ## What this shows
 
-Three independent single-node k3s clusters running as Docker containers:
+Four independent single-node k3s clusters running as Docker containers:
 
+- **management** (`localhost:6447`) — runs only Argo CD, no workload namespaces
 - **internal** (`localhost:6444`)
 - **stg** (`localhost:6446`)
 - **prod** (`localhost:6445`)
 
-Each cluster gets the same namespace layout (`manifests/<cluster>/`).
-Those directories are bind-mounted into each container's
-`/var/lib/rancher/k3s/server/manifests/custom` (a subdirectory, so k3s can
-still write its own required manifests like `coredns.yaml`/`traefik.yaml`
-alongside ours), and k3s auto-applies everything under `server/manifests`
-recursively. `docker compose up -d` applies this baseline, installs Argo CD
-on prod through the separately mounted `argocd/helmchart.yaml`, and - once
-all three clusters and Argo CD are healthy - the `argocd-bootstrap` service
-connects the clusters and starts GitOps deployment of KEDA and the workers.
-No script to run by hand.
+internal, stg, and prod each get the same namespace layout
+(`manifests/<cluster>/`). Those directories are bind-mounted into each
+container's `/var/lib/rancher/k3s/server/manifests/custom` (a subdirectory,
+so k3s can still write its own required manifests like
+`coredns.yaml`/`traefik.yaml` alongside ours), and k3s auto-applies
+everything under `server/manifests` recursively. `docker compose up -d`
+applies this baseline, installs Argo CD on management through the
+separately mounted `argocd/helmchart.yaml`, and - once all four clusters
+and Argo CD are healthy - the `argocd-bootstrap` service registers
+internal/stg/prod as managed clusters and starts GitOps deployment of KEDA
+and the workers. No script to run by hand.
+
+management is a dedicated platform cluster on purpose: keeping Argo CD off
+any one workload cluster means rebuilding or losing `prod` doesn't also
+take down the thing managing `internal`/`stg`/`prod`, and all three are
+equally "remote" clusters to Argo CD - no special-casing one of them as
+"wherever Argo CD happens to run".
 
 This repo deploys two worker variants, `worker1` and `worker2` — same
 chart, same image, same everything except the `QUEUE_NAME` env var (and,
@@ -39,12 +48,12 @@ from `core-workers` on `prod` —
 namespace names aren't global, so reusing the same one across clusters is
 fine and avoids a redundant suffix.
 
-| Namespace      | Cluster  | Purpose                                                              |
-| -------------- | -------- | -------------------------------------------------------------------- |
-| `core-workers` | internal | Safe to break, catches issues before anything customer-facing        |
-| `core-workers` | stg      | Customer-facing canary gate for `core-workers` on prod               |
-| `core-workers` | prod     | Customer-facing, full production traffic                             |
-| `argocd`       | prod     | Fixed platform namespace — Argo CD lives here, not a workload tenant |
+| Namespace      | Cluster    | Purpose                                                              |
+| -------------- | ---------- | -------------------------------------------------------------------- |
+| `core-workers` | internal   | Safe to break, catches issues before anything customer-facing        |
+| `core-workers` | stg        | Customer-facing canary gate for `core-workers` on prod               |
+| `core-workers` | prod       | Customer-facing, full production traffic                             |
+| `argocd`       | management | Fixed platform namespace — the only thing this cluster runs          |
 
 ```bash
 docker exec k3s-internal kubectl get ns -l environment=internal
@@ -85,8 +94,8 @@ commented inline.
 For a fresh install, inspect the Helm job if Argo CD does not become ready:
 
 ```bash
-docker exec k3s-prod kubectl -n kube-system get helmchart argocd
-docker exec k3s-prod kubectl -n kube-system logs job/helm-install-argocd
+docker exec k3s-management kubectl -n kube-system get helmchart argocd
+docker exec k3s-management kubectl -n kube-system logs job/helm-install-argocd
 ```
 
 The `argocd/` directory holds the app-of-apps bootstrap:
@@ -100,8 +109,8 @@ The `argocd/` directory holds the app-of-apps bootstrap:
   GitOps instead of k3s's own auto-deploy mount.
 - `keda-appset.yaml` — installs KEDA (the operator + CRDs behind
   `core-workers`' autoscaling) via its official Helm chart, once per
-  cluster, since it's a cluster-scoped operator, not something the
-  cluster running Argo CD can provide to the others.
+  workload cluster, since it's a cluster-scoped operator - management
+  never runs core-workers, so it has no need for KEDA.
 - `core-workers-appset.yaml` — one `ApplicationSet` with a matrix
   generator crossing every stage with every worker, deploying
   `charts/core-workers` (both `worker1` and `worker2`) into their shared
@@ -130,7 +139,7 @@ once KEDA is added). `charts/common` holds shared name/label helpers used
 by the chart.
 
 Then explore (pick the container for the cluster you want: `k3s-internal`,
-`k3s-stg`, or `k3s-prod`):
+`k3s-stg`, `k3s-prod`, or `k3s-management`):
 
 ```bash
 docker exec k3s-internal kubectl get ns --show-labels
@@ -140,8 +149,8 @@ docker exec k3s-internal kubectl -n core-workers get pods -o wide
 docker exec k3s-internal kubectl -n core-workers get resourcequota,limitrange
 docker exec k3s-stg kubectl -n core-workers get resourcequota,limitrange
 docker exec k3s-prod kubectl -n core-workers get resourcequota,limitrange
-docker exec k3s-prod kubectl -n argocd get pods                     # Argo CD components
-docker exec k3s-prod kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=cluster  # managed clusters
+docker exec k3s-management kubectl -n argocd get pods                     # Argo CD components
+docker exec k3s-management kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=cluster  # managed clusters
 ```
 
 ### Queue messages

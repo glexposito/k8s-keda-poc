@@ -1,7 +1,7 @@
 # Platform-owned: namespace/quota/RBAC governance (manifests-internal,
-# manifests-stg, manifests-prod) - the layer with cluster-scoped access,
-# so it's kept separate from the core-workers project, which gets none at
-# all.
+# manifests-stg, manifests-prod, manifests-management) - the layer with
+# cluster-scoped access, so it's kept separate from the core-workers
+# project, which gets none at all.
 #
 # sync-wave -1 so this (and the core-workers AppProject) get created
 # before clusters-appset.yaml / core-workers-appset.yaml try to generate
@@ -30,6 +30,8 @@ spec:
     - server: https://k3s-internal:6443
       namespace: '*'
     - server: https://k3s-stg:6443
+      namespace: '*'
+    - server: https://k3s-prod:6443
       namespace: '*'
   clusterResourceWhitelist:
     - group: ''

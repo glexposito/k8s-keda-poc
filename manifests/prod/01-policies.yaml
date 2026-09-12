@@ -6,8 +6,7 @@
 # charts/core-workers/values-prod.yaml), so 40 pods (both workers at their
 # ceiling at once) is the real worst case - this quota covers that plus
 # rollout headroom - the largest tier of any cluster, since it carries
-# full production traffic. argocd's quota is unrelated to
-# core-workers - it's sized to comfortably hold Argo CD's own components.
+# full production traffic.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -41,47 +40,6 @@ kind: NetworkPolicy
 metadata:
   name: allow-same-namespace-only
   namespace: core-workers
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector: {}
----
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: platform-quota
-  namespace: argocd
-spec:
-  hard:
-    requests.cpu: "4"
-    requests.memory: 4Gi
-    limits.cpu: "8"
-    limits.memory: 8Gi
-    pods: "40"
----
-apiVersion: v1
-kind: LimitRange
-metadata:
-  name: default-limits
-  namespace: argocd
-spec:
-  limits:
-    - type: Container
-      default:
-        cpu: 200m
-        memory: 256Mi
-      defaultRequest:
-        cpu: 100m
-        memory: 128Mi
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-same-namespace-only
-  namespace: argocd
 spec:
   podSelector: {}
   policyTypes:

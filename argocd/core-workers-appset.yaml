@@ -23,7 +23,7 @@ spec:
                 - stage: stg
                   server: https://k3s-stg:6443
                 - stage: prod
-                  server: https://kubernetes.default.svc
+                  server: https://k3s-prod:6443
           - list:
               elements:
                 - worker: worker1

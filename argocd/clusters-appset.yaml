@@ -2,7 +2,10 @@
 # directory from this repo (namespaces, quotas, RBAC, network policies) -
 # the same content k3s's own auto-deploy mechanism applies today, now
 # managed via GitOps instead. This is the governance layer; the actual
-# workload is handled separately by core-workers-appset.yaml.
+# workload is handled separately by core-workers-appset.yaml. Includes
+# management itself (syncing manifests/management/, its own namespace/
+# quota/CoreDNS) - Argo CD self-manages the cluster it runs on the same
+# way it manages every other one.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -17,6 +20,8 @@ spec:
           - cluster: stg
             server: https://k3s-stg:6443
           - cluster: prod
+            server: https://k3s-prod:6443
+          - cluster: management
             server: https://kubernetes.default.svc
   template:
     metadata:

@@ -1,8 +1,7 @@
 # prod is the final promotion step - full production traffic, highest
-# quota tier for core-workers (see README "Namespace design
-# rationale"). `argocd` is a separate, fixed platform namespace - not a
-# workload tenant - reserved for Argo CD, installed there by the K3s
-# HelmChart in argocd/helmchart.yaml.
+# quota tier for core-workers. Argo CD itself lives on the dedicated
+# management cluster (manifests/management/), not here - prod is a plain
+# workload tenant like internal/stg now.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -11,14 +10,4 @@ metadata:
     environment: prod
     stage: prod
     cost-center: cc-2000
-    managed-by: k8s-keda-poc
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: argocd
-  labels:
-    environment: prod
-    stage: prod
-    cost-center: cc-1000
     managed-by: k8s-keda-poc

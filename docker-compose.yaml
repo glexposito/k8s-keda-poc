@@ -79,18 +79,60 @@ services:
 
     ports:
       - "6445:6443"
-      # Argo CD UI - argocd/helmchart.yaml sets server.service.type=NodePort
-      # on 30090, so this is reachable directly, no kubectl port-forward.
-      - "9000:30090"
 
     volumes:
       - prod-data:/var/lib/rancher/k3s
       - prod-kubeconfig:/etc/rancher/k3s
       - ./manifests/prod:/var/lib/rancher/k3s/server/manifests/custom:ro
+
+    networks:
+      k8s-management:
+        # Fixed so manifests/management/05-cluster-dns.yaml can resolve
+        # k3s-prod as static, git-committed YAML - prod is just another
+        # remote cluster to the management cluster's Argo CD now, same
+        # as internal/stg.
+        ipv4_address: 172.28.0.103
+
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl wait --for=create node --all --timeout=3s && kubectl wait --for=condition=ready node --all --timeout=3s"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 10s
+
+  # Dedicated platform cluster: runs only Argo CD, no workload namespaces.
+  # Keeps the GitOps control plane's fate independent of any one workload
+  # cluster - rebuilding/losing prod no longer means losing the thing
+  # that manages internal/stg/prod. prod, internal, and stg are all
+  # equally "remote" clusters to Argo CD now - no more special-casing one
+  # of them as "wherever Argo CD happens to run".
+  management:
+    image: docker.io/rancher/k3s:v1.36.2-k3s1
+    container_name: k3s-management
+    hostname: k3s-management
+    privileged: true
+
+    command:
+      - server
+      - --node-name=management
+      - --tls-san=localhost
+      - --tls-san=k3s-management
+
+    ports:
+      - "6447:6443"
+      # Argo CD UI - argocd/helmchart.yaml sets server.service.type=NodePort
+      # on 30090, so this is reachable directly, no kubectl port-forward.
+      - "9000:30090"
+
+    volumes:
+      - management-data:/var/lib/rancher/k3s
+      - management-kubeconfig:/etc/rancher/k3s
+      - ./manifests/management:/var/lib/rancher/k3s/server/manifests/custom:ro
       - ./argocd/helmchart.yaml:/var/lib/rancher/k3s/server/manifests/argocd-helmchart.yaml:ro
 
     networks:
-      - k8s-management
+      k8s-management:
+        ipv4_address: 172.28.0.104
 
     healthcheck:
       test: ["CMD-SHELL", "kubectl wait --for=create node --all --timeout=3s && kubectl wait --for=condition=ready node --all --timeout=3s"]
@@ -128,11 +170,11 @@ services:
         # bootstrap script has to discover at runtime via `docker inspect`.
         ipv4_address: 172.28.0.100
 
-  # One-shot: registers internal/stg with Argo CD (running on prod) and
-  # applies the root Application, once all three clusters are up and Argo
-  # CD has installed. Reuses the k3s image purely for its bundled kubectl -
-  # no server process runs here. Talks to each cluster over
-  # k8s-management by hostname instead of `docker exec`, using the
+  # One-shot: registers internal/stg/prod with Argo CD (running on
+  # management) and applies the root Application, once all four clusters
+  # are up and Argo CD has installed. Reuses the k3s image purely for its
+  # bundled kubectl - no server process runs here. Talks to each cluster
+  # over k8s-management by hostname instead of `docker exec`, using the
   # kubeconfig each k3s server writes to /etc/rancher/k3s/k3s.yaml (shared
   # via the *-kubeconfig volumes above); --server overrides the
   # 127.0.0.1 baked into that file, and TLS still verifies cleanly
@@ -148,33 +190,36 @@ services:
         condition: service_healthy
       prod:
         condition: service_healthy
+      management:
+        condition: service_healthy
 
     volumes:
       - internal-kubeconfig:/kubeconfigs/internal:ro
       - stg-kubeconfig:/kubeconfigs/stg:ro
       - prod-kubeconfig:/kubeconfigs/prod:ro
+      - management-kubeconfig:/kubeconfigs/management:ro
       - ./argocd/root-app.yaml:/argocd/root-app.yaml:ro
 
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -e
-        prod() { kubectl --kubeconfig=/kubeconfigs/prod/k3s.yaml --server=https://k3s-prod:6443 "$$@"; }
+        management() { kubectl --kubeconfig=/kubeconfigs/management/k3s.yaml --server=https://k3s-management:6443 "$$@"; }
 
         echo "Waiting for Argo CD..."
         for workload in deployment/argocd-server deployment/argocd-repo-server \
           deployment/argocd-applicationset-controller statefulset/argocd-application-controller; do
-          prod -n argocd wait --for=create "$$workload" --timeout=600s
-          prod -n argocd rollout status "$$workload" --timeout=300s
+          management -n argocd wait --for=create "$$workload" --timeout=600s
+          management -n argocd rollout status "$$workload" --timeout=300s
         done
 
-        echo "Registering internal and stg as managed clusters..."
-        for cluster in internal stg; do
+        echo "Registering internal, stg, and prod as managed clusters..."
+        for cluster in internal stg prod; do
           remote() { kubectl --kubeconfig=/kubeconfigs/$$cluster/k3s.yaml --server=https://k3s-$$cluster:6443 "$$@"; }
           remote -n kube-system wait --for=create secret/argocd-manager-token --timeout=120s
           remote -n kube-system wait --for=jsonpath='{.data.token}' secret/argocd-manager-token --timeout=120s
           token=$$(remote -n kube-system get secret argocd-manager-token -o jsonpath='{.data.token}' | base64 -d)
-          prod apply -n argocd -f - <<EOF
+          management apply -n argocd -f - <<EOF
         apiVersion: v1
         kind: Secret
         metadata:
@@ -192,8 +237,8 @@ services:
         done
 
         echo "Applying the root Application..."
-        prod apply -n argocd -f /argocd/root-app.yaml
-        echo "Managed clusters: prod, internal, stg. Argo CD UI: https://localhost:9000 (admin/123)"
+        management apply -n argocd -f /argocd/root-app.yaml
+        echo "Managed clusters: internal, stg, prod. Argo CD UI: https://localhost:9000 (admin/123)"
 
     networks:
       - k8s-management
@@ -239,9 +284,11 @@ volumes:
   internal-data:
   stg-data:
   prod-data:
+  management-data:
   internal-kubeconfig:
   stg-kubeconfig:
   prod-kubeconfig:
+  management-kubeconfig:
   azurite-data:
 
 networks:

@@ -1,16 +1,16 @@
-# ServiceAccount Argo CD (running in the prod cluster's argocd
+# ServiceAccount Argo CD (running in the management cluster's argocd
 # namespace) authenticates as when it manages this cluster remotely.
 # cluster-admin is used here for PoC simplicity - a real deployment would
 # scope this down to just the namespaces/resources Argo CD actually needs.
 #
 # The token below can't be handed to Argo CD by dropping a static file in
-# manifests/prod/ - each cluster generates its own credentials. The token
-# persists with the cluster volume; the argocd-bootstrap Compose service
-# copies it into prod on `docker compose up -d`. If just this cluster's
-# volume gets rebuilt (not a fresh `up -d` of the whole stack), rerun
-# with `docker compose up -d --force-recreate argocd-bootstrap` to
-# re-register it - the bootstrap container itself won't recreate on its
-# own just because a service it depends on changed.
+# manifests/management/ - each cluster generates its own credentials.
+# The token persists with the cluster volume; the argocd-bootstrap
+# Compose service copies it into management on `docker compose up -d`.
+# If just this cluster's volume gets rebuilt (not a fresh `up -d` of the
+# whole stack), rerun with `docker compose up -d --force-recreate
+# argocd-bootstrap` to re-register it - the bootstrap container itself
+# won't recreate on its own just because a service it depends on changed.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

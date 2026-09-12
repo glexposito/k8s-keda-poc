@@ -1,9 +1,10 @@
 # Installs KEDA (the operator + CRDs that power core-workers' ScaledObjects)
-# via its official Helm chart, once per cluster - KEDA is a cluster-scoped
-# operator, so each cluster needs its own instance, not just the one
-# running Argo CD. project: platform, same as clusters-appset.yaml, since
-# installing an operator with its own CRDs is cluster-scoped governance,
-# not a product-pillar workload.
+# via its official Helm chart, once per cluster that actually runs
+# core-workers - KEDA is a cluster-scoped operator, so each of internal/
+# stg/prod needs its own instance. management doesn't appear here: it
+# never runs core-workers, so it has no need for KEDA. project: platform,
+# same as clusters-appset.yaml, since installing an operator with its own
+# CRDs is cluster-scoped governance, not a product-pillar workload.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -18,7 +19,7 @@ spec:
           - cluster: stg
             server: https://k3s-stg:6443
           - cluster: prod
-            server: https://kubernetes.default.svc
+            server: https://k3s-prod:6443
   template:
     metadata:
       name: 'keda-{{cluster}}'

@@ -19,7 +19,7 @@ spec:
       namespace: 'core-workers'
     - server: https://k3s-stg:6443
       namespace: 'core-workers'
-    - server: https://kubernetes.default.svc
+    - server: https://k3s-prod:6443
       namespace: 'core-workers'
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
