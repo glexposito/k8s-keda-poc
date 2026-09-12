@@ -32,11 +32,8 @@ and Argo CD are healthy - the `argocd-bootstrap` service registers
 internal/stg/prod as managed clusters and starts GitOps deployment of KEDA
 and the workers. No script to run by hand.
 
-management is a dedicated platform cluster on purpose: keeping Argo CD off
-any one workload cluster means rebuilding or losing `prod` doesn't also
-take down the thing managing `internal`/`stg`/`prod`, and all three are
-equally "remote" clusters to Argo CD - no special-casing one of them as
-"wherever Argo CD happens to run".
+management is a dedicated platform cluster on purpose - see the comment on
+its service in `docker-compose.yaml` for why.
 
 This repo deploys two worker variants, `worker1` and `worker2` — same
 chart, same image, same everything except the `QUEUE_NAME` env var (and,
