@@ -1,0 +1,9 @@
+# Kustomize doesn't know KEDA's CRD, so tell it that a ScaledObject's
+# scaleTargetRef points at a Deployment - that way the per-worker name
+# suffix updates the reference too (it already does that on its own for
+# the Deployment's secretKeyRef).
+nameReference:
+  - kind: Deployment
+    fieldSpecs:
+      - kind: ScaledObject
+        path: spec/scaleTargetRef/name

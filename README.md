@@ -36,7 +36,7 @@ management is a dedicated platform cluster on purpose - see the comment on
 its service in `docker-compose.yaml` for why.
 
 This repo deploys two worker variants, `worker1` and `worker2` — same
-chart, same image, same everything except the `QUEUE_NAME` env var (and,
+Kustomize base, same image, same everything except the `QUEUE_NAME` env var (and,
 once KEDA is added, their scaling rules) — both into a namespace called
 `core-workers` on each cluster. The namespace name doesn't carry a stage
 suffix: each cluster is already dedicated to one environment (silo model),
@@ -61,12 +61,13 @@ Every cluster's `core-workers` namespace also has its own `ResourceQuota`, a
 `LimitRange`, and a default-deny-except-same-namespace `NetworkPolicy` —
 defined per cluster in `manifests/<cluster>/01-policies.yaml`, so the exact
 same namespace name can carry a completely different quota on each cluster
-(they're separate API servers; nothing links them by name). Each worker
-runs the same `replicaCount` per environment (`internal`: 1, `stg`: 2,
-`prod`: 5), so the actual pod floor per cluster is double that (both
-workers combined) — quotas are sized to hold that floor plus headroom for
-future scale-up, graduated by environment: `internal` is smallest, `stg`
-is mid-sized, `prod` is largest.
+(they're separate API servers; nothing links them by name). KEDA scales each worker
+between 0 and a per-environment ceiling (`maxReplicaCount` in
+`apps/core-workers/overlays/<stage>/scaling.yaml`: `internal` 5, `stg` 10,
+`prod` 20), so the worst case per cluster is double that (both workers at
+their ceiling at once) — quotas are sized to hold that plus rollout
+headroom, graduated by environment: `internal` is smallest, `stg` is
+mid-sized, `prod` is largest.
 
 ## Prerequisites
 
@@ -110,7 +111,7 @@ The `argocd/` directory holds the app-of-apps bootstrap:
   never runs core-workers, so it has no need for KEDA.
 - `core-workers-appset.yaml` — one `ApplicationSet` with a matrix
   generator crossing every stage with every worker, deploying
-  `charts/core-workers` (both `worker1` and `worker2`) into their shared
+  `apps/core-workers` (both `worker1` and `worker2`) into their shared
   namespace on all three clusters — 6 Applications from one file. Each
   worker gets a KEDA `ScaledObject` scaling on `core-workers-queue`'s
   depth, with different messages-per-replica ratios and ceilings per
@@ -126,14 +127,17 @@ All of these reference this repo's real remote
 (`https://github.com/glexposito/k8s-keda-poc.git`) as `repoURL`, so they
 sync as-is once Argo CD is running.
 
-`charts/core-workers` is a small, generic Helm chart (not tied to any real
-app or company) — one `values.yaml` with shared defaults, plus two
-independent axes of overrides layered on top by the appset:
-`values-internal.yaml`/`values-stg.yaml`/`values-prod.yaml` (environment:
-`replicaCount` and `APP_ENV`) and `values-worker1.yaml`/
-`values-worker2.yaml` (worker identity: `QUEUE_NAME` today, scaling rules
-once KEDA is added). `charts/common` holds shared name/label helpers used
-by the chart.
+`apps/core-workers` is a small, generic Kustomize app (not tied to any
+real app or company) — a `base/` with shared defaults and one
+`overlays/<stage>` per environment patching `APP_ENV` (`app_env.yaml`)
+and the KEDA scaling rules (`scaling.yaml`). The appset deploys each
+stage overlay twice, once per worker, adding a `-worker1`/`-worker2` name
+suffix and instance label. Render a stage locally to see what gets
+applied (minus that suffix):
+
+```bash
+kubectl kustomize apps/core-workers/overlays/prod
+```
 
 Then explore (pick the container for the cluster you want: `k3s-internal`,
 `k3s-stg`, `k3s-prod`, or `k3s-management`):

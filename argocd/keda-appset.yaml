@@ -63,6 +63,6 @@ spec:
           # perpetual OutOfSync/retry-failed for just that one resource
           # as a result. This doesn't affect functionality - this repo
           # only ever creates ScaledObject resources (see
-          # charts/core-workers/templates/scaledobject.yaml), never
+          # apps/core-workers/base/scaledobject.yaml), never
           # ScaledJob, and scaledobjects.keda.sh installs and syncs
           # cleanly on its own.

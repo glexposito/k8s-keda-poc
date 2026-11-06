@@ -1,12 +1,12 @@
-# Deploys both core-worker variants (charts/core-workers, same chart, same
-# image) into their shared namespace on each of the three clusters - a
-# matrix generator crosses every stage with every worker, so this stays
-# one appset regardless of how many workers or environments exist.
-# worker1/worker2 differ only by values-<worker>.yaml (QUEUE_NAME) layered
-# on top of values-<stage>.yaml (APP_ENV plus the KEDA scaling.* rules -
-# messages-per-replica and the min/max ceiling differ per environment, not
-# per worker) on top of values.yaml (shared defaults). Requires KEDA
-# already installed on each cluster - see argocd/keda-appset.yaml.
+# Deploys both core-worker variants (apps/core-workers, same Kustomize
+# base, same image) into their shared namespace on each of the three
+# clusters - a matrix generator crosses every stage with every worker, so
+# this stays one appset regardless of how many workers or environments
+# exist. The stage comes from git (apps/core-workers/overlays/<stage>:
+# APP_ENV plus the KEDA scaling rules); the worker identity is added here
+# per Application (name suffix + instance label), since worker1 and worker2
+# are otherwise identical. Requires KEDA already installed on each cluster
+# - see argocd/keda-appset.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -45,29 +45,24 @@ spec:
       source:
         repoURL: https://github.com/glexposito/k8s-keda-poc.git
         targetRevision: HEAD
-        path: charts/core-workers
-        helm:
-          # releaseName drives the chart's common.fullname (Release.Name),
-          # so this is what actually keeps worker1's and worker2's
-          # Deployment/Service names apart within the one shared namespace
-          # on each cluster - without it, Argo CD would default the
-          # release name to the Application name above instead. No
-          # core-workers- prefix needed here (unlike the Application name
-          # below): Kubernetes uniqueness is (namespace, kind, name), and
-          # "worker1"/"worker2" are already unique within the core-workers
-          # namespace on their own - repeating the namespace's own name
-          # inside each object's name would just be redundant.
-          releaseName: '{{worker}}'
-          valueFiles:
-            - values.yaml
-            - 'values-{{stage}}.yaml'
-            - 'values-{{worker}}.yaml'
+        path: 'apps/core-workers/overlays/{{stage}}'
+        kustomize:
+          # Keeps worker1's and worker2's objects apart within the one
+          # shared namespace (core-workers-worker1, core-workers-worker2,
+          # azurite-connection-worker1, ...). Each worker gets its own
+          # Secret even though the content is identical - a shared one
+          # would be owned by two Applications, which Argo CD fights over.
+          nameSuffix: '-{{worker}}'
+          # Also added to the Deployment/Service selectors, so each
+          # worker's Service only targets its own pods.
+          commonLabels:
+            app.kubernetes.io/instance: '{{worker}}'
       destination:
         server: '{{server}}'
         namespace: 'core-workers'
       # Without this, selfHeal would reset spec.replicas back to
-      # values.yaml's static replicaCount on every sync, fighting the HPA
-      # that templates/scaledobject.yaml's ScaledObject creates - Argo CD
+      # base/deployment.yaml's static replicas on every sync, fighting the
+      # HPA that base/scaledobject.yaml's ScaledObject creates - Argo CD
       # would "correct" KEDA's scaling decision away every time it
       # reconciles.
       ignoreDifferences:

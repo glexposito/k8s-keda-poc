@@ -1,12 +1,12 @@
-# Per-namespace governance: caps resource usage and isolates namespaces
-# from each other at the network layer. k3s enables its kube-router
-# network policy controller by default, so these NetworkPolicies are
-# actually enforced (not just descriptive). KEDA scales both worker1 and
-# worker2 between 0 and maxReplicaCount: 20 here (see
-# charts/core-workers/values-prod.yaml), so 40 pods (both workers at their
-# ceiling at once) is the real worst case - this quota covers that plus
-# rollout headroom - the largest tier of any cluster, since it carries
-# full production traffic.
+# Per-namespace governance: caps resource usage and isolates namespaces from
+# each other at the network layer. k3s enables its kube-router network
+# policy controller by default, so these NetworkPolicies are actually
+# enforced (not just descriptive). KEDA scales both worker1 and worker2
+# between 0 and maxReplicaCount: 20 here (see
+# apps/core-workers/overlays/prod/scaling.yaml), so 40 pods (both
+# workers at their ceiling at once) is the real worst case - this quota
+# covers that plus rollout headroom - the largest tier of any cluster, since
+# it carries full production traffic.
 apiVersion: v1
 kind: ResourceQuota
 metadata:

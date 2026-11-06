@@ -33,9 +33,9 @@ spec:
       kind: Pod
     - group: ''
       kind: Secret
-    # KEDA's ScaledObject - the chart's actual autoscaling rule (see
-    # templates/scaledobject.yaml). TriggerAuthentication isn't used here
-    # (connectionFromEnv reads the Secret above directly off this
+    # KEDA's ScaledObject - the workers' actual autoscaling rule (see
+    # apps/core-workers/base/scaledobject.yaml). TriggerAuthentication isn't
+    # used here (connectionFromEnv reads the Secret above directly off this
     # Deployment's own pod spec instead), so it's not whitelisted.
     - group: keda.sh
       kind: ScaledObject

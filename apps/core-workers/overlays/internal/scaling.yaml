@@ -1,0 +1,11 @@
+# 1 replica per 50 messages, smallest ceiling of any environment -
+# internal is the lowest-risk tier.
+- op: test                      # stop the build if trigger 0 isn't azure-queue
+  path: /spec/triggers/0/type
+  value: azure-queue
+- op: replace
+  path: /spec/maxReplicaCount
+  value: 5
+- op: replace
+  path: /spec/triggers/0/metadata/queueLength
+  value: "50"

@@ -1,9 +1,0 @@
-replicaCount: 0
-appEnvironment: internal
-
-# 1 replica per 50 messages, smallest ceiling of any environment - internal
-# is the lowest-risk tier.
-scaling:
-  minReplicaCount: 0
-  maxReplicaCount: 5
-  queueLength: 50

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-workers
+spec:
+  # This is only the initial/fallback value - once the ScaledObject
+  # (scaledobject.yaml) is synced, KEDA's HPA owns this field.
+  # argocd/core-workers-appset.yaml's ignoreDifferences on spec/replicas
+  # is what stops Argo CD fighting the HPA back to this fixed number on
+  # every sync. 0 matches every stage's minReplicaCount.
+  replicas: 0
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    spec:
+      containers:
+        - name: core-workers
+          image: nginxdemos/hello:plain-text
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          env:
+            # Every stage overlay sets this explicitly.
+            - name: APP_ENV
+              value: production
+            # Shared by both workers - neither actually processes messages
+            # yet (this repo is a scaling demo), so there's no reason to
+            # split it. If they ever need different queues, patch this (and
+            # the ScaledObject's queueName) per worker in the appset.
+            - name: QUEUE_NAME
+              value: core-workers-queue
+            # Read by KEDA's azure-queue scaler too (scaledobject.yaml's
+            # connectionFromEnv) - KEDA resolves this env var directly off
+            # this Deployment's own pod spec, so the ScaledObject doesn't
+            # need its own separate credential lookup.
+            - name: AZURE_STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: azurite-connection
+                  key: connectionString
+          # Sized per-worker, not per-deployment - deliberately light, since
+          # the quota that actually caps this
+          # (manifests/<cluster>/01-policies.yaml) has to hold up to
+          # maxReplicaCount of these, per worker, per environment.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10

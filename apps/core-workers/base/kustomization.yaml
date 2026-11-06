@@ -1,0 +1,20 @@
+# Shared by every stage and worker. overlays/<stage> patches APP_ENV and
+# the KEDA scaling rules on top; argocd/core-workers-appset.yaml then adds
+# the worker identity (-<worker> name suffix + instance label) per
+# Application.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - service.yaml
+  - secret.yaml
+  - scaledobject.yaml
+configurations:
+  - kustomizeconfig.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/name: core-workers
+    includeSelectors: true
+  - pairs:
+      app.kubernetes.io/component: worker
+      app.kubernetes.io/managed-by: kustomize

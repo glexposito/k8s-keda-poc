@@ -1,0 +1,38 @@
+# Requires KEDA's CRDs to already exist on this cluster (argocd/keda-appset.yaml).
+# If that Application hasn't synced yet the first time everything bootstraps
+# together, this Application will fail until it does - Argo CD's own
+# auto-sync retries pick it up once the CRD lands, no manual ordering
+# needed between the two ApplicationSets.
+#
+# minReplicaCount/maxReplicaCount/queueLength are overridden per stage
+# (overlays/<stage>/scaling.yaml).
+#
+# pollingInterval/cooldownPeriod/stabilizationWindowSeconds are
+# intentionally not overridden per-stage: they're PoC demo pacing, not a
+# risk-tier concern. cooldownPeriod governs KEDA's own N->0 scale-down
+# (default 300s); stabilizationWindowSeconds governs the underlying HPA's
+# N->1 scale-down (Kubernetes default 300s) - two different controllers,
+# set to the same number here but tuned independently.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: core-workers
+spec:
+  scaleTargetRef:
+    name: core-workers
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  pollingInterval: 10
+  cooldownPeriod: 30
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 30
+  triggers:
+    - type: azure-queue
+      metadata:
+        queueName: core-workers-queue
+        queueLength: "5"
+        accountName: devstoreaccount1
+        connectionFromEnv: AZURE_STORAGE_CONNECTION_STRING
